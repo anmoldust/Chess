@@ -5,9 +5,14 @@ Written while you were asleep. Everything below was verified by running it, not 
 end-to-end acceptance script passes every check.** Section 3 records a false alarm worth reading —
 it changed how verification is done in this repo.
 
-> **Read this before using AI games:** no Stockfish binary is installed on this machine, so
-> engine-service runs the **random-legal fallback** — legal, but deliberately weak. Point
-> `CCMMD_ENGINE_BINARY` at a UCI engine to get real strength (see section 6).
+> **AI opponent:** engine-service bakes in **Stockfish 19** (see `infra/engine.Dockerfile`) and
+> drives it over UCI. Verified: `e2e4` → `e7e5` at depth 10, and the service logs
+> `engine started: Stockfish 19`. Outside Docker, point `CCMMD_ENGINE_BINARY` at any UCI engine;
+> with it unset the service falls back to a random legal move and says so in its name.
+>
+> **Analysis is still heuristic.** `analysis-service` does not use Stockfish: it reports material
+> swings (`engineBacked=false`), because evaluating positions needs an engine in that service too.
+> Swapping it in means replacing `AnalysisCalculator`.
 
 Plan of record: `~/.commandcode/plans/microservices-split.md`
 

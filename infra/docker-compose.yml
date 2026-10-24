@@ -118,14 +118,12 @@ services:
     <<: *service-defaults
     build:
       context: ..
-      dockerfile: infra/service.Dockerfile
-      args: { MODULE: services/engine-service }
+      # Its own Dockerfile: the image bakes in Stockfish and therefore needs a glibc base.
+      dockerfile: infra/engine.Dockerfile
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: chess
       SPRING_RABBITMQ_PASSWORD: chess
-      # Blank => random-legal fallback. Mount an engine and point this at it for real strength.
-      CCMMD_ENGINE_BINARY: ${CCMMD_ENGINE_BINARY:-}
     depends_on:
       rabbitmq: { condition: service_healthy }
     healthcheck:
