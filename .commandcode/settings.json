@@ -16,7 +16,9 @@
       "Shell(del:*)",
       "Shell(docker:*)",
       "Shell(Select-Object:*)",
-      "Shell(powershell -NoProfile -ExecutionPolicy Bypass -File \"infra\\tools\\stub-downstream.ps1\" -Port 8082 -CaptureFile \"C:\\Users\\rajat\\Desktop\\CCMMD\\infra\\tools\\stub-capture.log\")"
+      "Shell(powershell -NoProfile -ExecutionPolicy Bypass -File \"infra\\tools\\stub-downstream.ps1\" -Port 8082 -CaptureFile \"C:\\Users\\rajat\\Desktop\\CCMMD\\infra\\tools\\stub-capture.log\")",
+      "Shell(agent-browser:*)",
+      "Shell(timeout /t 5 >nul & agent-browser snapshot -i 2>&1 | findstr /C:\"heading\" /C:\"button\" /C:\"error\" /C:\"Game\" /C:\"Sign out\")"
     ],
     "deny": [],
     "defaultMode": "default"

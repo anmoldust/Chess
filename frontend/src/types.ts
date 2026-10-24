@@ -19,6 +19,16 @@ export interface AuthStatus {
   user: UserDto | null;
 }
 
+/**
+ * What register/login actually return: the account *inside* a wrapper, alongside the token.
+ * The client only ever uses `.user` — the token stays server-side in the gateway session.
+ */
+export interface TokenResponse {
+  user: UserDto;
+  token: string;
+  expiresAt: string;
+}
+
 export interface MoveDto {
   ply: number;
   from: string;

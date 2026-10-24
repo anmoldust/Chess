@@ -36,4 +36,6 @@ ccmmd:
     issuer: ccmmd-auth
     # Games stay watchable without an account, exactly as before the split. Writes are NOT
     # opened here — they need a token, and the service layer decides ownership from it.
-    public-paths: "GET:/api/games,GET:/api/games/**,/ws/**"
+    # `/ws` must be listed alongside `/ws/**`: the STOMP handshake uses the bare path, and
+    # `/ws/**` alone does not match it — which surfaces in the browser only as "offline".
+    public-paths: "GET:/api/games,GET:/api/games/**,/ws,/ws/**"

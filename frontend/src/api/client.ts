@@ -9,6 +9,7 @@ import type {
   PlayerColor,
   PresenceStatus,
   QueueStatus,
+  TokenResponse,
   UserDto,
 } from '../types';
 import { csrfTokenFrom } from '../lib/cookies';
@@ -70,12 +71,23 @@ export const api = {
     me(): Promise<AuthStatus> {
       return request<AuthStatus>('/auth/me');
     },
+
+    // These return {user, token, expiresAt}; the caller wants the account, so unwrap it here
+    // rather than leaving every caller to remember the extra layer.
     register(body: { email: string; password: string; displayName: string }): Promise<UserDto> {
-      return request<UserDto>('/auth/register', { method: 'POST', body: JSON.stringify(body) });
+      return request<TokenResponse>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }).then((response) => response.user);
     },
+
     login(body: { email: string; password: string }): Promise<UserDto> {
-      return request<UserDto>('/auth/login', { method: 'POST', body: JSON.stringify(body) });
+      return request<TokenResponse>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }).then((response) => response.user);
     },
+
     logout(): Promise<void> {
       return request<void>('/auth/logout', { method: 'POST' });
     },

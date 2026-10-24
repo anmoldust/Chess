@@ -16,7 +16,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws");
+        // A WebSocket handshake is checked against its Origin, and the gateway forwards the
+        // browser's (http://localhost:3000) — which never matches this service's own host, so
+        // Spring rejects it with 403 and the browser reports only "offline". The service publishes
+        // no ports, so the gateway is the only thing that can reach it; the check adds nothing here
+        // and breaks the proxied handshake.
+        registry.addEndpoint("/ws").setAllowedOriginPatterns("*");
     }
 
     @Override

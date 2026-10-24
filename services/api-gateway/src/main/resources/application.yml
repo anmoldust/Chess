@@ -29,7 +29,9 @@ spring:
         - id: game-service-websocket
           uri: ${ccmmd.services.game-service}
           predicates:
-            - Path=/ws/**
+            # The bare path and the subtree both, so the STOMP handshake is not a 404 through
+            # the gateway — which the browser reports only as "offline".
+            - Path=/ws,/ws/**
         - id: matchmaking-service
           uri: ${ccmmd.services.matchmaking-service}
           predicates:
