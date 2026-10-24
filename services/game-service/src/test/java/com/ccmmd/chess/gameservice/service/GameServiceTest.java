@@ -423,4 +423,74 @@ class GameServiceTest {
 
         assertThat(ended.endReason()).isEqualTo(GameEndReason.CHECKMATE);
     }
+
+    @Test
+    @DisplayName("a draw offer is visible to both players before anyone accepts")
+    void drawOfferIsVisible() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        GameDto offered = gameService.offerDraw(game.id(), RAJAT);
+
+        assertThat(offered.drawOfferBy()).isEqualTo(PlayerColor.WHITE);
+        assertThat(offered.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(gameService.getGame(game.id()).drawOfferBy()).isEqualTo(PlayerColor.WHITE);
+    }
+
+    @Test
+    @DisplayName("offering back accepts the draw")
+    void offeringBackAccepts() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.offerDraw(game.id(), RAJAT);
+
+        GameDto accepted = gameService.offerDraw(game.id(), SAM);
+
+        assertThat(accepted.status()).isEqualTo(GameStatus.DRAW);
+        assertThat(accepted.result()).isEqualTo("1/2-1/2");
+        assertThat(accepted.endReason()).isEqualTo(GameEndReason.DRAW_AGREED);
+        assertThat(accepted.drawOfferBy()).isNull();
+    }
+
+    @Test
+    @DisplayName("offering twice does not accept your own offer")
+    void offeringTwiceIsIdempotent() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.offerDraw(game.id(), RAJAT);
+
+        GameDto again = gameService.offerDraw(game.id(), RAJAT);
+
+        assertThat(again.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(again.drawOfferBy()).isEqualTo(PlayerColor.WHITE);
+    }
+
+    @Test
+    @DisplayName("declining clears the offer and play continues")
+    void decliningKeepsPlaying() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.offerDraw(game.id(), RAJAT);
+
+        GameDto declined = gameService.declineDraw(game.id(), SAM);
+
+        assertThat(declined.drawOfferBy()).isNull();
+        assertThat(declined.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT).moves()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a spectator cannot offer a draw")
+    void spectatorCannotOfferADraw() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        assertThatThrownBy(() -> gameService.offerDraw(game.id(), ALEX))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("no side may offer a draw once the game is over")
+    void cannotOfferADrawAfterTheGameEnds() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.resign(game.id(), SAM);
+
+        assertThatThrownBy(() -> gameService.offerDraw(game.id(), RAJAT))
+                .isInstanceOf(GameConflictException.class);
+    }
 }

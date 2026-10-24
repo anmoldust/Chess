@@ -28,6 +28,8 @@ public record GameDto(
         PlayerColor turn,
         String result,
         GameEndReason endReason,
+        /** The side with an open draw offer, or null. The opponent accepts by offering back. */
+        PlayerColor drawOfferBy,
         Long whiteTimeMs,
         Long blackTimeMs,
         long incrementMs,

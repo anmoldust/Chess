@@ -66,4 +66,15 @@ public class GameController {
     public GameDto resign(@PathVariable String id, Authentication authentication) {
         return gameService.resign(id, JwtPrincipals.userId(authentication));
     }
+
+    /** Offers a draw, or accepts the opponent's open offer. */
+    @PostMapping("/{id}/draw")
+    public GameDto offerDraw(@PathVariable String id, Authentication authentication) {
+        return gameService.offerDraw(id, JwtPrincipals.userId(authentication));
+    }
+
+    @PostMapping("/{id}/draw/decline")
+    public GameDto declineDraw(@PathVariable String id, Authentication authentication) {
+        return gameService.declineDraw(id, JwtPrincipals.userId(authentication));
+    }
 }

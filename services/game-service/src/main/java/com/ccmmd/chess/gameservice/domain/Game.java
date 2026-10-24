@@ -82,6 +82,11 @@ public class Game {
     @Column(name = "end_reason", length = 32)
     private GameEndReason endReason;
 
+    /** Which side has an open draw offer, or null. Cleared when accepted, declined or the game ends. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "draw_offer_by", length = 8)
+    private PlayerColor drawOfferBy;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "game_moves", joinColumns = @JoinColumn(name = "game_id"))
     @OrderColumn(name = "move_index")
@@ -209,6 +214,20 @@ public class Game {
 
     public void setEndReason(GameEndReason endReason) {
         this.endReason = endReason;
+    }
+
+    public PlayerColor getDrawOfferBy() {
+        return drawOfferBy;
+    }
+
+    public void offerDraw(PlayerColor color) {
+        this.drawOfferBy = color;
+        touch();
+    }
+
+    public void clearDrawOffer() {
+        this.drawOfferBy = null;
+        touch();
     }
 
     /** The account id seated on the given color, or null for an empty or computer seat. */

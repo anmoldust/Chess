@@ -261,9 +261,73 @@ public class GameService {
         game.setStatus(seat == PlayerColor.WHITE ? GameStatus.BLACK_WON : GameStatus.WHITE_WON);
         game.setEndReason(GameEndReason.RESIGNATION);
         game.stopClock();
+        game.clearDrawOffer();
         Game saved = repository.saveAndFlush(game);
         publishGameEnded(saved);
 
+        return GameMapper.toDto(saved);
+    }
+
+    /**
+     * Offers a draw — or accepts one. Offering back is the acceptance: there is no separate verb,
+     * which keeps the client to one button and prevents a half-open offer being accepted twice.
+     */
+    @Transactional
+    public GameDto offerDraw(String id, String userId) {
+        requireSignedIn(userId, "offer a draw");
+
+        Game game = require(id);
+        PlayerColor seat = seatedColor(game, userId);
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
+            throw new GameConflictException("Game " + id + " is not in progress");
+        }
+
+        PlayerColor open = game.getDrawOfferBy();
+        if (open != null && open != seat) {
+            return agreeDraw(game);
+        }
+        if (open == seat) {
+            return GameMapper.toDto(game); // already offered; idempotent
+        }
+
+        game.offerDraw(seat);
+        return GameMapper.toDto(repository.saveAndFlush(game));
+    }
+
+    @Transactional
+    public GameDto declineDraw(String id, String userId) {
+        requireSignedIn(userId, "decline a draw");
+
+        Game game = require(id);
+        PlayerColor seat = seatedColor(game, userId);
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
+            throw new GameConflictException("Game " + id + " is not in progress");
+        }
+
+        // Only the opponent can decline; declining your own offer is meaningless.
+        if (game.getDrawOfferBy() != null && game.getDrawOfferBy() != seat) {
+            game.clearDrawOffer();
+            return GameMapper.toDto(repository.saveAndFlush(game));
+        }
+        return GameMapper.toDto(game);
+    }
+
+    private static PlayerColor seatedColor(Game game, String userId) {
+        PlayerColor seat = game.colorOf(userId);
+        if (seat == null) {
+            throw new AccessDeniedException("You are not a player in this game");
+        }
+        return seat;
+    }
+
+    private GameDto agreeDraw(Game game) {
+        game.clearDrawOffer();
+        game.setStatus(GameStatus.DRAW);
+        game.setEndReason(GameEndReason.DRAW_AGREED);
+        game.stopClock();
+
+        Game saved = repository.saveAndFlush(game);
+        publishGameEnded(saved);
         return GameMapper.toDto(saved);
     }
 
@@ -343,6 +407,7 @@ public class GameService {
         game.setEndReason(reason);
 
         if (status.isOver()) {
+            game.clearDrawOffer();
             game.stopClock();
         } else if (game.hasClock()) {
             game.chargeClock(mover, remainingMs, now);

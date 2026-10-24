@@ -117,6 +117,15 @@ export const api = {
     return request<GameDto>(`/games/${id}/resign`, { method: 'POST' });
   },
 
+  /** Offers a draw, or accepts the opponent's open offer. */
+  offerDraw(id: string): Promise<GameDto> {
+    return request<GameDto>(`/games/${id}/draw`, { method: 'POST' });
+  },
+
+  declineDraw(id: string): Promise<GameDto> {
+    return request<GameDto>(`/games/${id}/draw/decline`, { method: 'POST' });
+  },
+
   matchmaking: {
     queue(timeControl: string): Promise<QueueStatus> {
       return request<QueueStatus>('/matchmaking/queue', {

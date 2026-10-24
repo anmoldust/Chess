@@ -11,5 +11,7 @@ public enum GameEndReason {
     STALEMATE,
     INSUFFICIENT_MATERIAL,
     FIFTY_MOVE_RULE,
-    THREEFOLD_REPETITION
+    THREEFOLD_REPETITION,
+    /** Both players agreed to split the point. */
+    DRAW_AGREED
 }

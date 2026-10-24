@@ -241,6 +241,24 @@ export function GamePage({ gameId }: { gameId: string }) {
     }
   };
 
+  // Draws go over REST: unlike moves there is no live-update requirement that justifies a
+  // socket message, and the server broadcast brings both clients up to date either way.
+  const offerOrAcceptDraw = () => {
+    setError(null);
+    api
+      .offerDraw(gameId)
+      .then(setGame)
+      .catch((e) => setError(errorMessage(e)));
+  };
+
+  const declineDraw = () => {
+    setError(null);
+    api
+      .declineDraw(gameId)
+      .then(setGame)
+      .catch((e) => setError(errorMessage(e)));
+  };
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -294,6 +312,22 @@ export function GamePage({ gameId }: { gameId: string }) {
           {error && <p className="error">{error}</p>}
           <div className="actions">
             {canJoin && <button onClick={join}>Join this game</button>}
+            {started && myColor !== null && game.drawOfferBy === null && (
+              <button className="secondary" onClick={offerOrAcceptDraw}>
+                Offer draw
+              </button>
+            )}
+            {started && myColor !== null && game.drawOfferBy !== null && game.drawOfferBy !== myColor && (
+              <>
+                <button onClick={offerOrAcceptDraw}>Accept draw</button>
+                <button className="secondary" onClick={declineDraw}>
+                  Decline
+                </button>
+              </>
+            )}
+            {started && myColor !== null && game.drawOfferBy === myColor && (
+              <span className="muted small">Draw offered — waiting for your opponent…</span>
+            )}
             {started && myColor !== null && (
               <button className="secondary" onClick={resign}>
                 Resign

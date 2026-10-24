@@ -61,6 +61,8 @@ export interface GameDto {
   result: string | null;
   /** Why it ended — what a player actually wants to read. */
   endReason: GameEndReason | null;
+  /** The side with an open draw offer. The opponent accepts by offering back. */
+  drawOfferBy: PlayerColor | null;
   /** Remaining milliseconds at the moment of this snapshot; the client ticks from there. */
   whiteTimeMs: number | null;
   blackTimeMs: number | null;

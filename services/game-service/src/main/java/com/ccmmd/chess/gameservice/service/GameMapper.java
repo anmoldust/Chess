@@ -33,6 +33,7 @@ public final class GameMapper {
                 ChessRules.turnOf(game.getFen()),
                 resultOf(game.getStatus()),
                 game.getEndReason(),
+                game.getDrawOfferBy(),
                 game.hasClock() ? game.remainingMs(PlayerColor.WHITE) : null,
                 game.hasClock() ? game.remainingMs(PlayerColor.BLACK) : null,
                 game.getIncrementMs(),
