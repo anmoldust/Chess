@@ -319,3 +319,55 @@ button.secondary {
 .move-number {
   color: var(--muted);
 }
+
+.queue-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.notification-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.notification-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.pill {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.pill-result {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}

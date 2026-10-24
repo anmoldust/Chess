@@ -4,7 +4,9 @@ import { errorMessage } from '../lib/errors';
 import { navigate } from '../lib/useHashRoute';
 import { useAuthStore } from '../store/authStore';
 import { useGameStore } from '../store/gameStore';
-import type { GameDto, GameMode, PlayerColor } from '../types';
+import type { GameDto, GameMode, NotificationDto, PlayerColor } from '../types';
+
+const TIME_CONTROLS = ['BLITZ', 'RAPID', 'CLASSICAL'];
 
 export function LobbyPage() {
   const user = useAuthStore((s) => s.user);
@@ -17,7 +19,11 @@ export function LobbyPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const [timeControl, setTimeControl] = useState(TIME_CONTROLS[0]);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+
+  const refreshGames = useCallback(async () => {
     try {
       setOpenGames(await api.listOpenGames());
     } catch {
@@ -25,9 +31,18 @@ export function LobbyPage() {
     }
   }, []);
 
+  const refreshNotifications = useCallback(async () => {
+    try {
+      setNotifications(await api.notifications.list());
+    } catch {
+      // Notifications are a side panel; a failure here must not break the lobby.
+    }
+  }, []);
+
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshGames();
+    void refreshNotifications();
+  }, [refreshGames, refreshNotifications]);
 
   const create = async () => {
     setBusy(true);
@@ -57,10 +72,98 @@ export function LobbyPage() {
     }
   };
 
-  const joinable = openGames.filter((game) => game.whiteUserId !== user?.id && game.blackUserId !== user?.id);
+  const findMatch = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const queued = await api.matchmaking.queue(timeControl);
+      setQueuePosition(queued.position);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelMatch = async () => {
+    try {
+      await api.matchmaking.leave();
+    } catch {
+      // Leaving is best-effort; the queue entry is cancelled server-side either way.
+    }
+    setQueuePosition(null);
+  };
+
+  // While queued, poll for a pairing. The match is announced by the server, so the client has
+  // nothing to compute — it just waits to be told where to go.
+  useEffect(() => {
+    if (queuePosition === null) {
+      return;
+    }
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const status = await api.matchmaking.status();
+        if (!active) return;
+        if (status.matched && status.gameId) {
+          setQueuePosition(null);
+          setGame(null);
+          navigate({ name: 'game', id: status.gameId });
+        } else if (!status.queued) {
+          setQueuePosition(null);
+        }
+      } catch {
+        // Keep polling; a transient error is not a reason to drop out of the queue.
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => void poll(), 2000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [queuePosition, setGame]);
+
+  const joinable = openGames.filter(
+    (game) => game.whiteUserId !== user?.id && game.blackUserId !== user?.id,
+  );
 
   return (
     <div className="lobby">
+      <div className="panel">
+        <h2>Quick match</h2>
+        <p className="muted">Get paired with another waiting player.</p>
+        <label className="field">
+          Time control
+          <select
+            value={timeControl}
+            onChange={(e) => setTimeControl(e.target.value)}
+            disabled={queuePosition !== null}
+          >
+            {TIME_CONTROLS.map((tc) => (
+              <option key={tc} value={tc}>
+                {tc.charAt(0) + tc.slice(1).toLowerCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+        {queuePosition === null ? (
+          <button disabled={busy} onClick={() => void findMatch()}>
+            Find opponent
+          </button>
+        ) : (
+          <div className="queue-state">
+            <p className="muted">Waiting for an opponent…</p>
+            <button className="secondary" onClick={() => void cancelMatch()}>
+              Cancel
+            </button>
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+      </div>
+
       <div className="panel">
         <h2>New game</h2>
         <p className="muted">
@@ -84,13 +187,12 @@ export function LobbyPage() {
         <button disabled={busy} onClick={() => void create()}>
           Create game
         </button>
-        {error && <p className="error">{error}</p>}
       </div>
 
       <div className="panel">
         <div className="row">
           <h2>Open games</h2>
-          <button className="secondary" onClick={() => void refresh()}>
+          <button className="secondary" onClick={() => void refreshGames()}>
             Refresh
           </button>
         </div>
@@ -121,6 +223,24 @@ export function LobbyPage() {
             </button>
           </div>
         </label>
+      </div>
+
+      <div className="panel">
+        <div className="row">
+          <h2>Notifications</h2>
+          <button className="secondary" onClick={() => void refreshNotifications()}>
+            Refresh
+          </button>
+        </div>
+        {notifications.length === 0 && <p className="muted">Nothing yet.</p>}
+        <ul className="notification-list">
+          {notifications.map((n) => (
+            <li key={n.id}>
+              <span className={n.kind === 'GAME_ENDED' ? 'pill pill-result' : 'pill'}>{n.kind}</span>
+              <span>{n.message}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

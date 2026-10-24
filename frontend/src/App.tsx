@@ -32,8 +32,25 @@ export function App() {
     };
   }, [setUser, setPhase]);
 
+  // Presence is a heartbeat, not a connection: the server's TTL expires on its own, so there is
+  // nothing to announce on an abrupt close. 45s against a 90s TTL leaves room for one dropped beat.
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const ping = () => {
+      void api.presence.heartbeat().catch(() => {
+        // Presence is advisory; never let it surface as an error in the UI.
+      });
+    };
+    ping();
+    const timer = window.setInterval(ping, 45_000);
+    return () => window.clearInterval(timer);
+  }, [user]);
+
   const signOut = async () => {
     try {
+      await api.presence.offline().catch(() => undefined);
       await api.auth.logout();
     } finally {
       setUser(null);

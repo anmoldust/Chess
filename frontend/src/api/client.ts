@@ -1,4 +1,16 @@
-import type { AuthStatus, GameDto, GameMode, MoveRequest, PlayerColor, UserDto } from '../types';
+import type {
+  AnalysisReport,
+  AuthStatus,
+  GameDto,
+  GameMode,
+  MatchmakingStatus,
+  MoveRequest,
+  NotificationDto,
+  PlayerColor,
+  PresenceStatus,
+  QueueStatus,
+  UserDto,
+} from '../types';
 import { csrfTokenFrom } from '../lib/cookies';
 
 const BASE = '/api';
@@ -91,5 +103,49 @@ export const api = {
 
   resign(id: string): Promise<GameDto> {
     return request<GameDto>(`/games/${id}/resign`, { method: 'POST' });
+  },
+
+  matchmaking: {
+    queue(timeControl: string): Promise<QueueStatus> {
+      return request<QueueStatus>('/matchmaking/queue', {
+        method: 'POST',
+        body: JSON.stringify({ timeControl }),
+      });
+    },
+
+    leave(): Promise<void> {
+      return request<void>('/matchmaking/queue', { method: 'DELETE' });
+    },
+
+    status(): Promise<MatchmakingStatus> {
+      return request<MatchmakingStatus>('/matchmaking/status');
+    },
+  },
+
+  presence: {
+    /** TTL-backed: stop calling it and the player goes offline on their own. */
+    heartbeat(): Promise<PresenceStatus> {
+      return request<PresenceStatus>('/presence/heartbeat', { method: 'POST' });
+    },
+
+    offline(): Promise<void> {
+      return request<void>('/presence/offline', { method: 'POST' });
+    },
+
+    status(userId: string): Promise<PresenceStatus> {
+      return request<PresenceStatus>(`/presence/${userId}`);
+    },
+  },
+
+  notifications: {
+    list(): Promise<NotificationDto[]> {
+      return request<NotificationDto[]>('/notifications');
+    },
+  },
+
+  analysis: {
+    forGame(gameId: string): Promise<AnalysisReport> {
+      return request<AnalysisReport>(`/analysis/${gameId}`);
+    },
   },
 };

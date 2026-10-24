@@ -54,3 +54,45 @@ export interface ErrorDto {
   code: string;
   detail: string;
 }
+
+/** Where a queued player stands. `position` is 1-based; 0 means "not in the queue". */
+export interface QueueStatus {
+  queued: boolean;
+  position: number;
+  queuedAt: string;
+}
+
+/** The lobby polls this; `gameId` is only set once a pairing exists. */
+export interface MatchmakingStatus {
+  queued: boolean;
+  matched: boolean;
+  gameId: string | null;
+}
+
+export interface NotificationDto {
+  id: string;
+  kind: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface PresenceStatus {
+  userId: string;
+  online: boolean;
+  gameId: string | null;
+}
+
+/**
+ * `engineBacked` is the honest bit: false means these are material counts from a heuristic,
+ * not an engine evaluation. Show it to the user rather than passing it off as accuracy.
+ */
+export interface AnalysisReport {
+  gameId: string;
+  accuracyWhite: number;
+  accuracyBlack: number;
+  blundersWhite: number;
+  blundersBlack: number;
+  movesAnalysed: number;
+  engineBacked: boolean;
+  createdAt: string;
+}

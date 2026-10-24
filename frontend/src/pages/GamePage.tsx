@@ -7,7 +7,7 @@ import { errorMessage } from '../lib/errors';
 import { useAuthStore } from '../store/authStore';
 import { useGameStore } from '../store/gameStore';
 import { connectGameSocket, type GameSocket } from '../ws/socket';
-import type { MoveRequest, PlayerColor } from '../types';
+import type { AnalysisReport, MoveRequest, PlayerColor } from '../types';
 
 const STATUS_LABEL: Record<string, string> = {
   WAITING_FOR_OPPONENT: 'Waiting for an opponent',
@@ -32,6 +32,7 @@ export function GamePage({ gameId }: { gameId: string }) {
   const aiFenRef = useRef<string | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [copied, setCopied] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -130,6 +131,39 @@ export function GamePage({ gameId }: { gameId: string }) {
       cancelled = true;
     };
   }, [game, isAi, myColor, difficulty, submitMove, setAiThinking, setError]);
+
+  const analysisGameId = game?.id;
+  const gameOver = game
+    ? game.status === 'WHITE_WON' || game.status === 'BLACK_WON' || game.status === 'DRAW'
+    : false;
+
+  // Analysis is produced asynchronously once the game ends, so poll briefly for it rather than
+  // showing "no analysis" the instant the result lands.
+  useEffect(() => {
+    if (!gameOver || !analysisGameId) {
+      setAnalysis(null);
+      return;
+    }
+    let active = true;
+    let attempts = 0;
+
+    const load = async () => {
+      try {
+        const report = await api.analysis.forGame(analysisGameId);
+        if (active) setAnalysis(report);
+      } catch {
+        attempts += 1;
+        if (active && attempts < 10) {
+          window.setTimeout(() => void load(), 2000);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [gameOver, analysisGameId]);
 
   const shareUrl = useMemo(
     () => `${window.location.origin}${window.location.pathname}#/game/${gameId}`,
@@ -230,6 +264,36 @@ export function GamePage({ gameId }: { gameId: string }) {
           <h3>Moves</h3>
           <MoveList moves={game.moves} />
         </div>
+
+        {gameOver && (
+          <div className="panel">
+            <h3>Analysis</h3>
+            {analysis ? (
+              <>
+                <div className="analysis-grid">
+                  <span className="muted">White</span>
+                  <span>{analysis.accuracyWhite.toFixed(1)}%</span>
+                  <span className="muted">Black</span>
+                  <span>{analysis.accuracyBlack.toFixed(1)}%</span>
+                  <span className="muted">Blunders</span>
+                  <span>
+                    {analysis.blundersWhite} / {analysis.blundersBlack}
+                  </span>
+                  <span className="muted">Moves</span>
+                  <span>{analysis.movesAnalysed}</span>
+                </div>
+                {!analysis.engineBacked && (
+                  <p className="muted small">
+                    Material heuristic, not an engine evaluation — it catches hung pieces and
+                    misses positional errors.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="muted">Analysis is being generated…</p>
+            )}
+          </div>
+        )}
 
         <p className="muted small">Game id: {game.id}</p>
       </aside>
