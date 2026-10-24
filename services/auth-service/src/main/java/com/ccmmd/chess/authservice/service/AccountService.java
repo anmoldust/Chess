@@ -8,6 +8,7 @@ import com.ccmmd.chess.authservice.dto.UserDto;
 import com.ccmmd.chess.authservice.exception.EmailAlreadyUsedException;
 import com.ccmmd.chess.authservice.exception.InvalidCredentialsException;
 import com.ccmmd.chess.authservice.repository.UserRepository;
+import com.ccmmd.chess.authservice.security.LoginRateLimiter;
 import com.ccmmd.chess.authservice.security.TokenIssuer;
 import com.ccmmd.chess.platform.events.EventType;
 import com.ccmmd.chess.platform.events.payload.UserRegistered;
@@ -28,16 +29,19 @@ public class AccountService {
     private final PasswordEncoder passwordEncoder;
     private final TokenIssuer tokenIssuer;
     private final OutboxPublisher outbox;
+    private final LoginRateLimiter loginRateLimiter;
 
     public AccountService(
             UserRepository users,
             PasswordEncoder passwordEncoder,
             TokenIssuer tokenIssuer,
-            OutboxPublisher outbox) {
+            OutboxPublisher outbox,
+            LoginRateLimiter loginRateLimiter) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.tokenIssuer = tokenIssuer;
         this.outbox = outbox;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @Transactional
@@ -69,13 +73,19 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public TokenResponse login(LoginRequest request) {
-        User user = users.findByEmailIgnoreCase(normaliseEmail(request.email()))
-                .orElseThrow(() -> new InvalidCredentialsException("No account"));
+        String email = normaliseEmail(request.email());
+        loginRateLimiter.checkAllowed(email);
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new InvalidCredentialsException("Bad password");
+        User user = users.findByEmailIgnoreCase(email).orElse(null);
+
+        // One failure path for both "no such account" and "wrong password": telling the caller
+        // which half was wrong turns login into an account-enumeration oracle.
+        if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            loginRateLimiter.recordFailure(email);
+            throw new InvalidCredentialsException("Invalid email or password");
         }
 
+        loginRateLimiter.reset(email);
         return issueTokenFor(user);
     }
 

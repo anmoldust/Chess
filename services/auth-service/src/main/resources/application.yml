@@ -37,3 +37,8 @@ ccmmd:
       key-path: ${user.home}/.ccmmd/auth-rsa.pem
     # Shared with the gateway. Replace with mTLS or service identities in production.
     internal-token: ${CCMMD_INTERNAL_TOKEN:dev-internal-token-change-me}
+    login:
+      # Per-account failed sign-in limit. In-memory per instance: N replicas allow roughly N times
+      # the attempts, so a shared counter belongs in Redis when this is scaled out.
+      max-attempts: ${CCMMD_LOGIN_MAX_ATTEMPTS:5}
+      window: ${CCMMD_LOGIN_WINDOW:PT5M}

@@ -31,6 +31,10 @@ ccmmd:
       ttl: PT15M
       key-path: ${java.io.tmpdir}/ccmmd-auth-test-rsa.pem
     internal-token: test-internal-token
+    login:
+      # Tests sign in many times from one context; the limiter has its own unit test.
+      max-attempts: 1000
+      window: PT5M
   messaging:
     outbox:
       # `fixedDelay` fires once immediately at startup and only then waits, so delaying the
