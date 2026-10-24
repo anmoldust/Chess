@@ -1,0 +1,65 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  main:
+    web-application-type: reactive
+
+  # Browser sessions live in Redis so any gateway instance can serve any request.
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  session:
+    timeout: 8h
+    redis:
+      namespace: ccmmd:session
+
+  cloud:
+    gateway:
+      routes:
+        - id: game-service
+          uri: ${ccmmd.services.game-service}
+          predicates:
+            - Path=/api/games/**
+        # The WebSocket handshake is proxied like any other request; the gateway attaches the
+        # Bearer token, which a browser could not set on a WebSocket handshake itself.
+        - id: game-service-websocket
+          uri: ${ccmmd.services.game-service}
+          predicates:
+            - Path=/ws/**
+        - id: matchmaking-service
+          uri: ${ccmmd.services.matchmaking-service}
+          predicates:
+            - Path=/api/matchmaking/**
+        - id: presence-service
+          uri: ${ccmmd.services.presence-service}
+          predicates:
+            - Path=/api/presence/**
+        - id: notification-service
+          uri: ${ccmmd.services.notification-service}
+          predicates:
+            - Path=/api/notifications/**
+        - id: analysis-service
+          uri: ${ccmmd.services.analysis-service}
+          predicates:
+            - Path=/api/analysis/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  services:
+    auth-service: ${CCMMD_AUTH_SERVICE_URL:http://localhost:8081}
+    game-service: ${CCMMD_GAME_SERVICE_URL:http://localhost:8082}
+    matchmaking-service: ${CCMMD_MATCHMAKING_SERVICE_URL:http://localhost:8084}
+    presence-service: ${CCMMD_PRESENCE_SERVICE_URL:http://localhost:8085}
+    notification-service: ${CCMMD_NOTIFICATION_SERVICE_URL:http://localhost:8086}
+    analysis-service: ${CCMMD_ANALYSIS_SERVICE_URL:http://localhost:8087}
+  # Shared with auth-service; the credential that authorises the gateway to mint tokens.
+  internal-token: ${CCMMD_INTERNAL_TOKEN:dev-internal-token-change-me}

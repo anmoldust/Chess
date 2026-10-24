@@ -1,0 +1,35 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: jdbc:postgresql://localhost:5433/notification_db
+    username: notification_svc
+    password: notification_svc
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        default-requeue-rejected: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  security:
+    jwks-uri: ${CCMMD_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+    issuer: ccmmd-auth

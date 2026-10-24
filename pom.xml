@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.ccmmd</groupId>
+    <artifactId>ccmmd-parent</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+    <name>CCMMD platform</name>
+    <description>Event-driven chess platform: shared modules and services</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <chesslib.version>1.3.3</chesslib.version>
+        <testcontainers.version>1.20.4</testcontainers.version>
+    </properties>
+
+    <!--
+      Modules are added as each stage lands so the aggregator always builds.
+      `backend/` is the pre-split monolith; it is retired once game-service exists.
+    -->
+    <modules>
+        <module>platform/common-events</module>
+        <module>platform/common-amqp</module>
+        <module>platform/common-security</module>
+        <module>platform/common-messaging</module>
+        <module>services/auth-service</module>
+        <module>services/api-gateway</module>
+        <module>services/game-service</module>
+        <module>services/engine-service</module>
+        <module>services/matchmaking-service</module>
+        <module>services/presence-service</module>
+        <module>services/notification-service</module>
+        <module>services/analysis-service</module>
+    </modules>
+
+    <repositories>
+        <!-- chesslib is distributed via JitPack -->
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.ccmmd</groupId>
+                <artifactId>common-events</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ccmmd</groupId>
+                <artifactId>common-security</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ccmmd</groupId>
+                <artifactId>common-amqp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ccmmd</groupId>
+                <artifactId>common-messaging</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

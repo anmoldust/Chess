@@ -1,0 +1,42 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: analysis-service
+  datasource:
+    url: jdbc:postgresql://localhost:5433/analysis_db
+    username: analysis_svc
+    password: analysis_svc
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        default-requeue-rejected: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  security:
+    jwks-uri: ${CCMMD_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+    issuer: ccmmd-auth
+    # A report about a publicly watchable game is itself safe to read publicly — the same rule
+    # that makes GET /api/games public. Without this, an anonymous spectator could watch a game
+    # but not read its analysis, which is an inconsistency rather than a protection.
+    public-paths: "GET:/api/analysis/**"
+  services:
+    game-service: ${CCMMD_GAME_SERVICE_URL:http://localhost:8082}
+    timeout: PT5S

@@ -1,0 +1,279 @@
+# Local infrastructure and the full service stack.
+#
+#   docker compose -f infra/docker-compose.yml up -d --build
+#
+# First build is slow: nine Maven builds run behind a shared BuildKit cache mount for ~/.m2.
+# Service ports are intentionally NOT published — only the gateway and the SPA are, so the
+# services can only be reached through the gateway, exactly as in production.
+name: ccmmd
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  environment:
+    SPRING_RABBITMQ_HOST: rabbitmq
+    SPRING_RABBITMQ_PORT: "5672"
+    SPRING_RABBITMQ_USERNAME: chess
+    SPRING_RABBITMQ_PASSWORD: chess
+    CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN:-dev-internal-token-change-me}
+  networks: [chess]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      # 5433 on the host: a native PostgreSQL server owns 5432 on this machine.
+      - "5433:5432"
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [chess]
+
+  rabbitmq:
+    # Not -alpine: on Docker Desktop/Windows it dies at boot reading .erlang.cookie.
+    image: rabbitmq:3.13-management
+    hostname: ccmmd-rabbit
+    environment:
+      RABBITMQ_DEFAULT_USER: chess
+      RABBITMQ_DEFAULT_PASS: chess
+      RABBITMQ_ERLANG_COOKIE: ccmmd-local-cookie
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [chess]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [chess]
+
+  auth-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/auth-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_db
+      SPRING_DATASOURCE_USERNAME: auth_svc
+      SPRING_DATASOURCE_PASSWORD: auth_svc
+      CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN:-dev-internal-token-change-me}
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  game-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/game-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/game_db
+      SPRING_DATASOURCE_USERNAME: game_svc
+      SPRING_DATASOURCE_PASSWORD: game_svc
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  engine-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/engine-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      # Blank => random-legal fallback. Mount an engine and point this at it for real strength.
+      CCMMD_ENGINE_BINARY: ${CCMMD_ENGINE_BINARY:-}
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  matchmaking-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/matchmaking-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/matchmaking_db
+      SPRING_DATASOURCE_USERNAME: matchmaking_svc
+      SPRING_DATASOURCE_PASSWORD: matchmaking_svc
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  presence-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/presence-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/notification-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: notification_svc
+      SPRING_DATASOURCE_PASSWORD: notification_svc
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8086/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  analysis-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/analysis-service }
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: chess
+      SPRING_RABBITMQ_PASSWORD: chess
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/analysis_db
+      SPRING_DATASOURCE_USERNAME: analysis_svc
+      SPRING_DATASOURCE_PASSWORD: analysis_svc
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+      CCMMD_GAME_SERVICE_URL: http://game-service:8082
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      game-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8087/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  api-gateway:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: infra/service.Dockerfile
+      args: { MODULE: services/api-gateway }
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      CCMMD_AUTH_SERVICE_URL: http://auth-service:8081
+      CCMMD_GAME_SERVICE_URL: http://game-service:8082
+      CCMMD_MATCHMAKING_SERVICE_URL: http://matchmaking-service:8084
+      CCMMD_PRESENCE_SERVICE_URL: http://presence-service:8085
+      CCMMD_NOTIFICATION_SERVICE_URL: http://notification-service:8086
+      CCMMD_ANALYSIS_SERVICE_URL: http://analysis-service:8087
+      CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN:-dev-internal-token-change-me}
+    depends_on:
+      redis: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      api-gateway: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [chess]
+
+networks:
+  chess:
+    driver: bridge
+
+volumes:
+  pgdata:

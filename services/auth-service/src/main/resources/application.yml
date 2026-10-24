@@ -1,0 +1,39 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    # Host port 5433: a native PostgreSQL server owns 5432 on the development machine.
+    url: jdbc:postgresql://localhost:5433/auth_db
+    username: auth_svc
+    password: auth_svc
+  jpa:
+    hibernate:
+      # Flyway owns the schema; Hibernate only checks the entities match it.
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  auth:
+    jwt:
+      issuer: ccmmd-auth
+      ttl: PT15M
+      # A mounted secret in production; generated and persisted on first boot locally.
+      key-path: ${user.home}/.ccmmd/auth-rsa.pem
+    # Shared with the gateway. Replace with mTLS or service identities in production.
+    internal-token: ${CCMMD_INTERNAL_TOKEN:dev-internal-token-change-me}

@@ -1,0 +1,32 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: presence-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        default-requeue-rejected: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  security:
+    jwks-uri: ${CCMMD_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+    issuer: ccmmd-auth
+  presence:
+    # A player is offline once this passes without a heartbeat.
+    ttl: PT90S

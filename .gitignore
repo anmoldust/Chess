@@ -1,0 +1,29 @@
+# Java / Maven — every module, not just backend/
+**/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/public/stockfish/
+npm-debug.log*
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# OS
+Thumbs.db
+
+# dev tooling output
+infra/tools/stub-capture.log

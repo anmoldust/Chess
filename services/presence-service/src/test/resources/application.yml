@@ -1,0 +1,24 @@
+server:
+  port: 0
+
+spring:
+  data:
+    redis:
+      # Integration test: needs Redis running (it is, via infra/docker-compose.yml).
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        auto-startup: false
+
+ccmmd:
+  security:
+    jwks-uri: http://localhost:9/.well-known/jwks.json
+    issuer: ccmmd-auth
+  presence:
+    ttl: PT90S

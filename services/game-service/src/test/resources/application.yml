@@ -1,0 +1,38 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:gamedb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # The real Flyway migrations run here, and Hibernate validates the entities against them.
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        default-requeue-rejected: false
+        # Tests never consume: a live listener would race the assertions on the outbox.
+        auto-startup: false
+
+ccmmd:
+  security:
+    # Never fetched: controller tests authenticate with the jwt() post-processor, so no token is
+    # ever verified against a real JWKS.
+    jwks-uri: http://localhost:9/.well-known/jwks.json
+    issuer: ccmmd-auth
+    public-paths: "GET:/api/games,GET:/api/games/**,/ws/**"
+  messaging:
+    outbox:
+      relay-initial-delay-ms: 3600000
+      relay-delay-ms: 3600000

@@ -1,0 +1,34 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: engine-service
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        # Without this a poison message is requeued forever and the consumer spins. With it, the
+        # message is rejected and lands in chess.engine-service.dlq where a human can look at it.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+ccmmd:
+  engine:
+    # A UCI engine executable, optionally with arguments. Blank => the random-legal fallback, so
+    # the service still works without an engine installed. Point it at Stockfish for real play:
+    #   CCMMD_ENGINE_BINARY=C:\tools\stockfish\stockfish.exe
+    binary: ${CCMMD_ENGINE_BINARY:}
+    startup-timeout-ms: 15000
+    move-timeout-ms: 15000

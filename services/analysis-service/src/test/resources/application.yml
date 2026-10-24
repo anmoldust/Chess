@@ -1,0 +1,35 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:analysisdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: chess
+    password: chess
+    listener:
+      simple:
+        auto-startup: false
+
+ccmmd:
+  security:
+    jwks-uri: http://localhost:9/.well-known/jwks.json
+    issuer: ccmmd-auth
+  services:
+    game-service: http://localhost:9
+    timeout: PT1S
+  messaging:
+    outbox:
+      relay-initial-delay-ms: 3600000
+      relay-delay-ms: 3600000
