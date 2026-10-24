@@ -23,7 +23,7 @@ public final class ChessRules {
     private ChessRules() {
     }
 
-    public record AppliedMove(String uci, String fenAfter, GameStatus status) {
+    public record AppliedMove(String uci, String fenAfter, GameStatus status, GameEndReason reason) {
     }
 
     public static Board board(String fen) {
@@ -39,6 +39,9 @@ public final class ChessRules {
     /**
      * Validate and apply a move against the stored FEN. Returns null when the move is not
      * legal in this position — callers must treat null as an illegal-move rejection.
+     *
+     * <p>The reason here excludes threefold repetition: that needs the game's history, which this
+     * method does not have. The caller adds it.
      */
     public static AppliedMove apply(String fen, String from, String to, String promotion) {
         Board board = board(fen);
@@ -47,7 +50,8 @@ public final class ChessRules {
             return null;
         }
         board.doMove(move);
-        return new AppliedMove(uci(move), board.getFen(), evaluateStatus(board));
+        Outcome outcome = evaluate(board, false);
+        return new AppliedMove(uci(move), board.getFen(), outcome.status(), outcome.reason());
     }
 
     private static Move matchLegalMove(Board board, String from, String to, String promotion) {
@@ -109,21 +113,40 @@ public final class ChessRules {
         return sb.toString();
     }
 
-    /** Terminal-state detection, in priority order: checkmate before any draw. */
-    public static GameStatus evaluateStatus(Board board) {
+    /** The outcome of a position, not just the status — the reason is what a player wants to read. */
+    public record Outcome(GameStatus status, GameEndReason reason) {
+    }
+
+    /**
+     * Terminal-state detection, in priority order: checkmate before any draw.
+     *
+     * <p>Threefold repetition cannot be seen in a bare FEN — it needs the game's history — so it is
+     * passed in by the caller, which owns the move list.
+     */
+    public static Outcome evaluate(Board board, boolean threefoldRepetition) {
         if (board.isMated()) {
-            return board.getSideToMove() == Side.WHITE ? GameStatus.BLACK_WON : GameStatus.WHITE_WON;
+            return new Outcome(
+                    board.getSideToMove() == Side.WHITE ? GameStatus.BLACK_WON : GameStatus.WHITE_WON,
+                    GameEndReason.CHECKMATE);
         }
         if (board.isStaleMate()) {
-            return GameStatus.DRAW;
+            return new Outcome(GameStatus.DRAW, GameEndReason.STALEMATE);
         }
         if (board.isInsufficientMaterial()) {
-            return GameStatus.DRAW;
+            return new Outcome(GameStatus.DRAW, GameEndReason.INSUFFICIENT_MATERIAL);
         }
         if (board.getHalfMoveCounter() >= 100) {
-            return GameStatus.DRAW;
+            return new Outcome(GameStatus.DRAW, GameEndReason.FIFTY_MOVE_RULE);
         }
-        return GameStatus.IN_PROGRESS;
+        if (threefoldRepetition) {
+            return new Outcome(GameStatus.DRAW, GameEndReason.THREEFOLD_REPETITION);
+        }
+        return new Outcome(GameStatus.IN_PROGRESS, null);
+    }
+
+    /** Status-only view, for callers with no history. */
+    public static GameStatus evaluateStatus(Board board) {
+        return evaluate(board, false).status();
     }
 
     public static List<Move> legalMoves(String fen) {

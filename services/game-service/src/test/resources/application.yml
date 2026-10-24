@@ -31,7 +31,11 @@ ccmmd:
     # ever verified against a real JWKS.
     jwks-uri: http://localhost:9/.well-known/jwks.json
     issuer: ccmmd-auth
-    public-paths: "GET:/api/games,GET:/api/games/**,/ws/**"
+    public-paths: "GET:/api/games,GET:/api/games/**,/ws,/ws/**"
+  game:
+    # The timeout sweep must not run behind the tests: they assert on games mid-flight.
+    timeout-sweep-initial-ms: 3600000
+    timeout-sweep-ms: 3600000
   messaging:
     outbox:
       relay-initial-delay-ms: 3600000

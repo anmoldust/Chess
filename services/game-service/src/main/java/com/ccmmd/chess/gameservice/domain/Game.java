@@ -61,6 +61,27 @@ public class Game {
     @Column(name = "difficulty", length = 16, nullable = false)
     private String difficulty = "MEDIUM";
 
+    @Column(name = "white_time_ms")
+    private Long whiteTimeMs;
+
+    @Column(name = "black_time_ms")
+    private Long blackTimeMs;
+
+    @Column(name = "increment_ms", nullable = false)
+    private long incrementMs;
+
+    /** The starting budget, kept so a waiting game can start its clock when an opponent arrives. */
+    @Column(name = "initial_ms")
+    private Long initialMs;
+
+    /** When the side currently to move started thinking; null while no clock is running. */
+    @Column(name = "clock_started_at")
+    private Instant clockStartedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "end_reason", length = 32)
+    private GameEndReason endReason;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "game_moves", joinColumns = @JoinColumn(name = "game_id"))
     @OrderColumn(name = "move_index")
@@ -124,6 +145,70 @@ public class Game {
 
     public void setDifficulty(String difficulty) {
         this.difficulty = difficulty;
+    }
+
+    /**
+     * Records the time control at creation. The times are set immediately so a waiting game can
+     * show them, but the clock does not run — {@code clockStartedAt} stays null until play begins.
+     */
+    public void prepareClock(long initialMs, long incrementMs) {
+        this.initialMs = initialMs;
+        this.incrementMs = incrementMs;
+        this.whiteTimeMs = initialMs;
+        this.blackTimeMs = initialMs;
+        touch();
+    }
+
+    /** Starts the clock for the side to move. Requires {@link #prepareClock}. */
+    public void startClock(Instant now) {
+        if (initialMs == null) {
+            return;
+        }
+        this.whiteTimeMs = initialMs;
+        this.blackTimeMs = initialMs;
+        this.clockStartedAt = now;
+        touch();
+    }
+
+    public boolean hasClock() {
+        return whiteTimeMs != null && blackTimeMs != null;
+    }
+
+    public long remainingMs(PlayerColor color) {
+        Long remaining = color == PlayerColor.WHITE ? whiteTimeMs : blackTimeMs;
+        return remaining == null ? 0L : remaining;
+    }
+
+    /** Sets the mover's remaining time and starts the opponent's clock. */
+    public void chargeClock(PlayerColor mover, long remainingMs, Instant now) {
+        if (mover == PlayerColor.WHITE) {
+            this.whiteTimeMs = Math.max(0L, remainingMs) + incrementMs;
+        } else {
+            this.blackTimeMs = Math.max(0L, remainingMs) + incrementMs;
+        }
+        this.clockStartedAt = now;
+        touch();
+    }
+
+    public void stopClock() {
+        this.clockStartedAt = null;
+        touch();
+    }
+
+    public Instant getClockStartedAt() {
+        return clockStartedAt;
+    }
+
+    public long getIncrementMs() {
+        return incrementMs;
+    }
+
+    public GameEndReason getEndReason() {
+        return endReason;
+    }
+
+    public void setEndReason(GameEndReason endReason) {
+        this.endReason = endReason;
     }
 
     /** The account id seated on the given color, or null for an empty or computer seat. */

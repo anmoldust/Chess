@@ -1,8 +1,10 @@
 package com.ccmmd.chess.gameservice.service;
 
+import com.ccmmd.chess.gameservice.domain.ChessRules;
 import com.ccmmd.chess.gameservice.domain.Game;
 import com.ccmmd.chess.gameservice.domain.GameStatus;
 import com.ccmmd.chess.gameservice.domain.MoveRecord;
+import com.ccmmd.chess.gameservice.domain.PlayerColor;
 import com.ccmmd.chess.gameservice.dto.GameDto;
 import com.ccmmd.chess.gameservice.dto.MoveDto;
 
@@ -17,6 +19,7 @@ public final class GameMapper {
         List<MoveDto> moves = game.getMoves().stream()
                 .map(GameMapper::toMoveDto)
                 .toList();
+
         return new GameDto(
                 game.getId(),
                 game.getFen(),
@@ -27,11 +30,14 @@ public final class GameMapper {
                 game.getWhiteUserId(),
                 game.getBlackUserId(),
                 game.getAiColor(),
-                com.ccmmd.chess.gameservice.domain.ChessRules.turnOf(game.getFen()),
+                ChessRules.turnOf(game.getFen()),
                 resultOf(game.getStatus()),
+                game.getEndReason(),
+                game.hasClock() ? game.remainingMs(PlayerColor.WHITE) : null,
+                game.hasClock() ? game.remainingMs(PlayerColor.BLACK) : null,
+                game.getIncrementMs(),
                 moves,
-                game.getVersion()
-        );
+                game.getVersion());
     }
 
     private static MoveDto toMoveDto(MoveRecord record) {

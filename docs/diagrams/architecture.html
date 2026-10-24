@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCMMD — architecture</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2029; --panel2: #222b36; --border: #2c3744;
+    --text: #e6edf3; --muted: #8b98a5; --accent: #5b9dd9; --ok: #3fb950; --warn: #d29922;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 28px 24px 56px;
+  }
+  .wrap { max-width: 1520px; margin: 0 auto; }
+  h1 { font-size: 1.45rem; margin: 0 0 4px; letter-spacing: .2px; }
+  h1 span { color: var(--accent); font-weight: 400; }
+  .sub { color: var(--muted); margin: 0 0 18px; font-size: .9rem; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .fact {
+    font-size: .76rem; color: var(--muted); border: 1px solid var(--border);
+    background: var(--panel); border-radius: 999px; padding: 4px 11px;
+  }
+  .fact b { color: var(--text); font-weight: 600; }
+  .canvas {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 10px; overflow-x: auto;
+  }
+  svg { display: block; width: 100%; height: auto; min-width: 1080px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 22px; margin: 14px 4px 0; font-size: .8rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 26px; height: 0; border-top-width: 2px; margin-right: 7px; vertical-align: middle; }
+  .flows { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 22px; }
+  .flow { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .flow h3 { margin: 0 0 10px; font-size: .95rem; }
+  .flow ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: .84rem; line-height: 1.75; }
+  .flow code {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 5px; font-size: .8rem; color: var(--text);
+  }
+  .note { margin-top: 22px; font-size: .8rem; color: var(--muted); line-height: 1.7; }
+  .note b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CCMMD <span>— system architecture</span></h1>
+  <p class="sub">Event-driven chess platform: nine Spring Boot services behind one gateway, with a React SPA.</p>
+
+  <div class="facts">
+    <span class="fact"><b>9</b> services</span>
+    <span class="fact"><b>12</b> containers</span>
+    <span class="fact"><b>5</b> databases</span>
+    <span class="fact"><b>134</b> backend tests</span>
+    <span class="fact"><b>13</b> frontend tests</span>
+    <span class="fact">AI: <b>Stockfish 19</b> (UCI)</span>
+    <span class="fact">broker: <b>RabbitMQ</b></span>
+  </div>
+
+  <div class="canvas">
+    <svg viewBox="0 0 1500 880" role="img" aria-label="Layered architecture diagram">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b9dd9"/>
+        </marker>
+        <marker id="arrowMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a5766"/>
+        </marker>
+        <marker id="arrowEvent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/>
+        </marker>
+      </defs>
+
+      <!-- layer labels -->
+      <text x="60" y="112" fill="#4a5766" font-size="11" letter-spacing="1.6">CLIENT</text>
+      <text x="60" y="222" fill="#4a5766" font-size="11" letter-spacing="1.6">EDGE</text>
+      <text x="60" y="432" fill="#4a5766" font-size="11" letter-spacing="1.6">SERVICES</text>
+      <text x="60" y="632" fill="#4a5766" font-size="11" letter-spacing="1.6">DATA &amp; MESSAGING</text>
+
+      <!-- ================= CLIENT ================= -->
+      <g>
+        <rect x="590" y="92" width="320" height="70" rx="11" fill="#222b36" stroke="#3d7ab5" stroke-width="1.5"/>
+        <text x="750" y="119" text-anchor="middle" fill="#e6edf3" font-size="14.5" font-weight="600">Browser</text>
+        <text x="750" y="138" text-anchor="middle" fill="#8b98a5" font-size="10.5">React + TypeScript SPA · react-chessboard</text>
+        <text x="750" y="153" text-anchor="middle" fill="#8b98a5" font-size="10.5">Stockfish WASM for local hints only</text>
+      </g>
+
+      <!-- browser -> nginx -->
+      <line x1="750" y1="162" x2="750" y2="196" stroke="#5b9dd9" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="762" y="184" fill="#8b98a5" font-size="10">HTTP(S)</text>
+
+      <!-- ================= EDGE ================= -->
+      <g>
+        <rect x="510" y="200" width="200" height="64" rx="10" fill="#222b36" stroke="#2c3744"/>
+        <text x="610" y="225" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">nginx</text>
+        <text x="610" y="243" text-anchor="middle" fill="#8b98a5" font-size="10.5">:3000 · static + proxy</text>
+      </g>
+      <line x1="710" y1="232" x2="742" y2="232" stroke="#5b9dd9" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="726" y="224" text-anchor="middle" fill="#8b98a5" font-size="9.5">/api · /ws</text>
+
+      <g>
+        <rect x="750" y="200" width="320" height="64" rx="10" fill="#222b36" stroke="#3d7ab5" stroke-width="1.5"/>
+        <text x="910" y="225" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">api-gateway</text>
+        <text x="910" y="243" text-anchor="middle" fill="#8b98a5" font-size="10.5">:8080 · session · CSRF · session → JWT</text>
+      </g>
+
+      <!-- ================= SERVICES ================= -->
+      <!-- gateway -> service bus -->
+      <line x1="910" y1="264" x2="910" y2="286" stroke="#5b9dd9" stroke-width="2"/>
+      <line x1="168" y1="286" x2="1332" y2="286" stroke="#5b9dd9" stroke-width="2"/>
+      <text x="922" y="300" fill="#8b98a5" font-size="10">Bearer JWT to every service</text>
+
+      <!-- stubs -->
+      <g stroke="#5b9dd9" stroke-width="1.8" marker-end="url(#arrow)">
+        <line x1="168"  y1="286" x2="168"  y2="416"/>
+        <line x1="362"  y1="286" x2="362"  y2="416"/>
+        <line x1="556"  y1="286" x2="556"  y2="416"/>
+        <line x1="750"  y1="286" x2="750"  y2="416"/>
+        <line x1="944"  y1="286" x2="944"  y2="416"/>
+        <line x1="1138" y1="286" x2="1138" y2="416"/>
+        <line x1="1332" y1="286" x2="1332" y2="416"/>
+      </g>
+
+      <!-- service boxes -->
+      <g font-size="10">
+        <g>
+          <rect x="78" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="168" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">auth</text>
+          <text x="168" y="461" text-anchor="middle" fill="#8b98a5">:8081</text>
+          <text x="168" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">accounts · BCrypt · JWKS</text>
+        </g>
+        <g>
+          <rect x="272" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#3d7ab5" stroke-width="1.5"/>
+          <text x="362" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">game</text>
+          <text x="362" y="461" text-anchor="middle" fill="#8b98a5">:8082 · REST + STOMP</text>
+          <text x="362" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">chess rules (chesslib)</text>
+        </g>
+        <g>
+          <rect x="466" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="556" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">engine</text>
+          <text x="556" y="461" text-anchor="middle" fill="#8b98a5">:8083 · no database</text>
+          <text x="556" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">Stockfish 19 over UCI</text>
+        </g>
+        <g>
+          <rect x="660" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="750" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">matchmaking</text>
+          <text x="750" y="461" text-anchor="middle" fill="#8b98a5">:8084</text>
+          <text x="750" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">queue · pairing (row locks)</text>
+        </g>
+        <g>
+          <rect x="854" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="944" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">presence</text>
+          <text x="944" y="461" text-anchor="middle" fill="#8b98a5">:8085 · no database</text>
+          <text x="944" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">heartbeat → Redis TTL</text>
+        </g>
+        <g>
+          <rect x="1048" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="1138" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">notification</text>
+          <text x="1138" y="461" text-anchor="middle" fill="#8b98a5">:8086</text>
+          <text x="1138" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">per-user history</text>
+        </g>
+        <g>
+          <rect x="1242" y="420" width="180" height="76" rx="10" fill="#222b36" stroke="#2c3744"/>
+          <text x="1332" y="443" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">analysis</text>
+          <text x="1332" y="461" text-anchor="middle" fill="#8b98a5">:8087</text>
+          <text x="1332" y="479" text-anchor="middle" fill="#8b98a5" font-size="9.5">post-game report</text>
+        </g>
+      </g>
+
+      <!-- services -> infra -->
+      <g stroke="#4a5766" stroke-width="1.4" marker-end="url(#arrowMuted)">
+        <line x1="168"  y1="496" x2="168"  y2="616"/>
+        <line x1="362"  y1="496" x2="362"  y2="616"/>
+        <line x1="556"  y1="496" x2="556"  y2="616"/>
+        <line x1="750"  y1="496" x2="750"  y2="616"/>
+        <line x1="944"  y1="496" x2="944"  y2="616"/>
+        <line x1="1138" y1="496" x2="1138" y2="616"/>
+        <line x1="1332" y1="496" x2="1332" y2="616"/>
+      </g>
+      <text x="180" y="566" fill="#8b98a5" font-size="10">own database · outbox → broker · presence</text>
+
+      <!-- ================= INFRA ================= -->
+      <rect x="78" y="620" width="1344" height="180" rx="12" fill="#151b22" stroke="#2c3744"/>
+
+      <g>
+        <rect x="96" y="646" width="596" height="134" rx="9" fill="#1a2029" stroke="#2c3744"/>
+        <text x="112" y="670" fill="#e6edf3" font-size="12.5" font-weight="600">PostgreSQL — one database per service</text>
+        <text x="112" y="692" fill="#8b98a5" font-size="10">auth_db · game_db · matchmaking_db · notification_db · analysis_db</text>
+        <text x="112" y="712" fill="#8b98a5" font-size="10">A service can reach only its own schema; no shared tables, no cross-service joins.</text>
+        <text x="112" y="732" fill="#8b98a5" font-size="10">Each holds its own outbox + processed_event, so the queue is per-service data too.</text>
+        <text x="112" y="758" fill="#4a5766" font-size="9.5">Flyway owns the schema; Hibernate validates entities against it.</text>
+      </g>
+
+      <g>
+        <rect x="708" y="646" width="386" height="134" rx="9" fill="#1a2029" stroke="#d29922"/>
+        <text x="724" y="670" fill="#d29922" font-size="12.5" font-weight="600">RabbitMQ — chess.events (topic)</text>
+        <text x="724" y="692" fill="#8b98a5" font-size="10">Routing key = event type. Dead-letter exchange chess.dlx,</text>
+        <text x="724" y="710" fill="#8b98a5" font-size="10">with a scoped DLQ per queue (no fan-out of poison messages).</text>
+        <text x="724" y="732" fill="#8b98a5" font-size="10">At-least-once delivery · idempotent consumers</text>
+        <text x="724" y="754" fill="#8b98a5" font-size="10">Request/reply: engine.move.requested ⇄ .computed</text>
+      </g>
+
+      <g>
+        <rect x="1110" y="646" width="296" height="134" rx="9" fill="#1a2029" stroke="#2c3744"/>
+        <text x="1126" y="670" fill="#e6edf3" font-size="12.5" font-weight="600">Redis</text>
+        <text x="1126" y="692" fill="#8b98a5" font-size="10">Gateway sessions (Spring Session)</text>
+        <text x="1126" y="710" fill="#8b98a5" font-size="10">Presence map, TTL-backed</text>
+        <text x="1126" y="736" fill="#8b98a5" font-size="10">Keeps the gateway stateless:</text>
+        <text x="1126" y="754" fill="#8b98a5" font-size="10">any replica can serve any session.</text>
+      </g>
+
+      <!-- gateway -> redis, drawn outside the services -->
+      <path d="M 1070 214 L 1470 214 L 1470 700 L 1412 700" fill="none" stroke="#5b9dd9" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+      <text x="1268" y="206" text-anchor="middle" fill="#8b98a5" font-size="10">session state</text>
+
+      <!-- ================= LEGEND ================= -->
+      <g transform="translate(78, 836)">
+        <line x1="0" y1="-4" x2="28" y2="-4" stroke="#5b9dd9" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="36" y="0" fill="#8b98a5" font-size="10.5">synchronous HTTP / WebSocket</text>
+
+        <line x1="258" y1="-4" x2="286" y2="-4" stroke="#5b9dd9" stroke-width="1.6" stroke-dasharray="5 4"/>
+        <text x="294" y="0" fill="#8b98a5" font-size="10.5">session state</text>
+
+        <line x1="430" y1="-4" x2="458" y2="-4" stroke="#4a5766" stroke-width="1.6" marker-end="url(#arrowMuted)"/>
+        <text x="466" y="0" fill="#8b98a5" font-size="10.5">durable state / async publish</text>
+
+        <rect x="660" y="-12" width="14" height="14" rx="3" fill="#222b36" stroke="#3d7ab5" stroke-width="1.5"/>
+        <text x="682" y="0" fill="#8b98a5" font-size="10.5">authoritative core</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="legend">
+    <span><i style="border-top:2px solid #5b9dd9"></i>a request travels the solid path</span>
+    <span><i style="border-top:1.5px dashed #5b9dd9"></i>session pinned in Redis</span>
+    <span><i style="border-top:1.5px solid #4a5766"></i>state and events leave the service</span>
+  </div>
+
+  <div class="flows">
+    <div class="flow">
+      <h3>1 · Sign in</h3>
+      <ol>
+        <li>Browser posts credentials to <code>nginx → api-gateway</code>.</li>
+        <li>Gateway calls <code>auth-service</code>, which verifies BCrypt and returns <code>{user, token, expiresAt}</code>.</li>
+        <li>Gateway keeps the token <b>in the session</b> (Redis) and sets an httpOnly cookie. The browser never sees a JWT.</li>
+        <li>On each proxied call the gateway swaps the session for a short-lived Bearer JWT; services verify it against auth's JWKS.</li>
+      </ol>
+    </div>
+
+    <div class="flow">
+      <h3>2 · Make a move</h3>
+      <ol>
+        <li>The move is <b>synchronous</b>: gateway → <code>game-service</code> → chesslib.</li>
+        <li>Applied in one transaction with optimistic locking, then announced via the outbox.</li>
+        <li><code>game.move.played</code> reaches presence; <code>game.ended</code> reaches notification and analysis.</li>
+        <li>Chess is never eventually consistent — only the announcements are.</li>
+      </ol>
+    </div>
+
+    <div class="flow">
+      <h3>3 · Play the computer</h3>
+      <ol>
+        <li>Human moves; game-service writes <code>engine.move.requested</code> in the same transaction.</li>
+        <li><code>engine-service</code> drives Stockfish over UCI and replies <code>engine.move.computed</code>.</li>
+        <li>Correlation id is <code>gameId:ply</code>, so a late or duplicated answer is ignored.</li>
+        <li>The reply is applied through the same validation path as any human move.</li>
+      </ol>
+    </div>
+
+    <div class="flow">
+      <h3>4 · Find an opponent</h3>
+      <ol>
+        <li>Two players queue in <code>matchmaking-service</code> (its own database, not Redis).</li>
+        <li>A scheduled matcher pairs them under row locks, so two replicas cannot pair one player twice.</li>
+        <li><code>matchmaking.match.found</code> carries a pre-allocated <code>gameId</code>.</li>
+        <li><code>game-service</code> creates the game under that id — idempotent on the id, not on the event.</li>
+      </ol>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Why the move path is synchronous:</b> a move is validated and applied by one writer, then announced.
+    Routing it through the broker would make the board eventually consistent, which chess cannot tolerate.
+    Everything that can lag — presence, notifications, analysis, the public game list — goes over the bus.<br><br>
+    <b>Why each service owns its outbox:</b> state and announcement must commit together. A service with no
+    durable state (engine, presence) publishes directly instead, because there is no dual write to protect.
+  </p>
+</div>
+</body>
+</html>

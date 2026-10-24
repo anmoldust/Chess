@@ -27,3 +27,6 @@ Thumbs.db
 
 # dev tooling output
 infra/tools/stub-capture.log
+
+# Command Code's own CLI state — personal machine state, not project source
+.commandcode/settings.json

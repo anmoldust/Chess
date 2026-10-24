@@ -10,5 +10,7 @@ public interface GameRepository extends JpaRepository<Game, String> {
 
     List<Game> findByStatusOrderByCreatedAtDesc(GameStatus status);
 
+    List<Game> findByStatus(GameStatus status);
+
     List<Game> findByStatusInOrderByCreatedAtDesc(List<GameStatus> statuses);
 }

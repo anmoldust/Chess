@@ -1,6 +1,7 @@
 package com.ccmmd.chess.gameservice.service;
 
 import com.ccmmd.chess.gameservice.domain.ChessRules;
+import com.ccmmd.chess.gameservice.domain.GameEndReason;
 import com.ccmmd.chess.gameservice.domain.GameMode;
 import com.ccmmd.chess.gameservice.domain.GameStatus;
 import com.ccmmd.chess.gameservice.domain.PlayerColor;
@@ -38,12 +39,12 @@ class GameServiceTest {
 
     private GameDto newHumanGame(String userId, String name) {
         return gameService.createGame(
-                new CreateGameRequest(GameMode.HUMAN_VS_HUMAN, PlayerColor.WHITE, null), userId, name);
+                new CreateGameRequest(GameMode.HUMAN_VS_HUMAN, PlayerColor.WHITE, null, "BLITZ"), userId, name);
     }
 
     private GameDto newAiGame(String userId, String name, PlayerColor color) {
         return gameService.createGame(
-                new CreateGameRequest(GameMode.HUMAN_VS_AI, color, "HARD"), userId, name);
+                new CreateGameRequest(GameMode.HUMAN_VS_AI, color, "HARD", "BLITZ"), userId, name);
     }
 
     private static String correlation(String gameId, int ply) {
@@ -108,7 +109,7 @@ class GameServiceTest {
     @DisplayName("an anonymous caller cannot create a game")
     void createRequiresAuth() {
         assertThatThrownBy(() -> gameService.createGame(
-                new CreateGameRequest(GameMode.HUMAN_VS_HUMAN, PlayerColor.WHITE, null), null, null))
+                new CreateGameRequest(GameMode.HUMAN_VS_HUMAN, PlayerColor.WHITE, null, null), null, null))
                 .isInstanceOf(AccessDeniedException.class);
     }
 
@@ -340,5 +341,86 @@ class GameServiceTest {
 
         // The id is the uniqueness guarantee, not the event.
         assertThat(gameService.getGame(gameId).moves()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a position repeated three times is a draw")
+    void threefoldRepetitionIsADraw() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        // Knights out and back, twice: the start position occurs on plies 0, 4 and 8.
+        String[][] moves = {
+                {"g1", "f3"}, {"g8", "f6"}, {"f3", "g1"}, {"f6", "g8"},
+                {"g1", "f3"}, {"g8", "f6"}, {"f3", "g1"}, {"f6", "g8"},
+        };
+        GameDto current = game;
+        for (int i = 0; i < moves.length; i++) {
+            String mover = i % 2 == 0 ? RAJAT : SAM;
+            current = gameService.makeMove(game.id(), new MoveRequest(moves[i][0], moves[i][1], null), mover);
+        }
+
+        assertThat(current.status()).isEqualTo(GameStatus.DRAW);
+        assertThat(current.endReason()).isEqualTo(GameEndReason.THREEFOLD_REPETITION);
+        assertThat(current.result()).isEqualTo("1/2-1/2");
+    }
+
+    @Test
+    @DisplayName("a position repeated only twice is not a draw")
+    void twofoldRepetitionIsNotADraw() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        GameDto current = game;
+        current = gameService.makeMove(game.id(), new MoveRequest("g1", "f3", null), RAJAT);
+        current = gameService.makeMove(game.id(), new MoveRequest("g8", "f6", null), SAM);
+        current = gameService.makeMove(game.id(), new MoveRequest("f3", "g1", null), RAJAT);
+        current = gameService.makeMove(game.id(), new MoveRequest("f6", "g8", null), SAM);
+
+        assertThat(current.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(current.endReason()).isNull();
+    }
+
+    @Test
+    @DisplayName("a game starts with the clock its time control specifies")
+    void clockStartsFromTheTimeControl() {
+        GameDto game = newAiGame(RAJAT, "rajat", PlayerColor.WHITE);
+
+        // BLITZ is 5 minutes plus a 2-second increment.
+        assertThat(game.whiteTimeMs()).isEqualTo(300_000L);
+        assertThat(game.blackTimeMs()).isEqualTo(300_000L);
+        assertThat(game.incrementMs()).isEqualTo(2_000L);
+    }
+
+    @Test
+    @DisplayName("a waiting game does not run its clock until an opponent joins")
+    void waitingGameClockStartsOnJoin() {
+        GameDto waiting = newHumanGame(RAJAT, "rajat");
+        assertThat(waiting.whiteTimeMs()).isEqualTo(300_000L);
+
+        GameDto joined = gameService.joinGame(waiting.id(), SAM, "sam");
+        assertThat(joined.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(joined.blackTimeMs()).isEqualTo(300_000L);
+    }
+
+    @Test
+    @DisplayName("resigning records why the game ended")
+    void resignRecordsTheReason() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        GameDto ended = gameService.resign(game.id(), SAM);
+
+        assertThat(ended.endReason()).isEqualTo(GameEndReason.RESIGNATION);
+    }
+
+    @Test
+    @DisplayName("checkmate records why the game ended")
+    void checkmateRecordsTheReason() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("f2", "f3", null), RAJAT);
+        gameService.makeMove(game.id(), new MoveRequest("e7", "e5", null), SAM);
+        gameService.makeMove(game.id(), new MoveRequest("g2", "g4", null), RAJAT);
+
+        GameDto ended = gameService.makeMove(game.id(), new MoveRequest("d8", "h4", null), SAM);
+
+        assertThat(ended.endReason()).isEqualTo(GameEndReason.CHECKMATE);
     }
 }

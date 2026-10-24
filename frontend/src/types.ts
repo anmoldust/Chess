@@ -8,6 +8,15 @@ export type GameStatus =
 export type GameMode = 'HUMAN_VS_HUMAN' | 'HUMAN_VS_AI';
 export type PlayerColor = 'WHITE' | 'BLACK' | 'RANDOM';
 
+export type GameEndReason =
+  | 'CHECKMATE'
+  | 'RESIGNATION'
+  | 'TIMEOUT'
+  | 'STALEMATE'
+  | 'INSUFFICIENT_MATERIAL'
+  | 'FIFTY_MOVE_RULE'
+  | 'THREEFOLD_REPETITION';
+
 export interface UserDto {
   id: string;
   email: string;
@@ -50,6 +59,12 @@ export interface GameDto {
   aiColor: PlayerColor | null;
   turn: PlayerColor;
   result: string | null;
+  /** Why it ended — what a player actually wants to read. */
+  endReason: GameEndReason | null;
+  /** Remaining milliseconds at the moment of this snapshot; the client ticks from there. */
+  whiteTimeMs: number | null;
+  blackTimeMs: number | null;
+  incrementMs: number;
   moves: MoveDto[];
   version: number;
 }

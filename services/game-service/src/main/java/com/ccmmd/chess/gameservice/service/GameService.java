@@ -2,10 +2,12 @@ package com.ccmmd.chess.gameservice.service;
 
 import com.ccmmd.chess.gameservice.domain.ChessRules;
 import com.ccmmd.chess.gameservice.domain.Game;
+import com.ccmmd.chess.gameservice.domain.GameEndReason;
 import com.ccmmd.chess.gameservice.domain.GameMode;
 import com.ccmmd.chess.gameservice.domain.GameStatus;
 import com.ccmmd.chess.gameservice.domain.MoveRecord;
 import com.ccmmd.chess.gameservice.domain.PlayerColor;
+import com.ccmmd.chess.gameservice.domain.TimeControl;
 import com.ccmmd.chess.gameservice.dto.CreateGameRequest;
 import com.ccmmd.chess.gameservice.dto.GameDto;
 import com.ccmmd.chess.gameservice.dto.MoveRequest;
@@ -23,11 +25,15 @@ import com.ccmmd.chess.platform.events.payload.MovePlayed;
 import com.ccmmd.chess.platform.messaging.OutboxPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -35,12 +41,10 @@ import java.util.UUID;
 
 /**
  * The strongly consistent core. A move is validated and applied here, in one transaction, and is
- * only *announced* afterwards via the outbox — it is never mediated by the bus. Chess cannot be
- * eventually consistent.
+ * only *announced* afterwards via the outbox — it is never mediated by the bus.
  *
- * <p>The AI's move is the one exception, and only in the sense that it is *requested* over the bus:
- * the request is written in the same transaction as the human's move, and the reply is applied back
- * here through the same validated path any other move takes.
+ * <p>Clocks are wall-clock: the time a move spends is measured from when the previous move landed.
+ * That is deliberately server-side — a client-supplied clock would be trivial to lie about.
  */
 @Service
 public class GameService {
@@ -53,10 +57,12 @@ public class GameService {
 
     private final GameRepository repository;
     private final OutboxPublisher outbox;
+    private final GameEventPublisher publisher;
 
-    public GameService(GameRepository repository, OutboxPublisher outbox) {
+    public GameService(GameRepository repository, OutboxPublisher outbox, GameEventPublisher publisher) {
         this.repository = repository;
         this.outbox = outbox;
+        this.publisher = publisher;
     }
 
     @Transactional
@@ -69,6 +75,7 @@ public class GameService {
                 : PlayerColor.WHITE).resolve();
         String name = normalizeName(displayName, "Player");
         String difficulty = normalizeDifficulty(request == null ? null : request.difficulty());
+        TimeControl control = TimeControl.from(request == null ? null : request.timeControl());
 
         GameStatus status = mode == GameMode.HUMAN_VS_AI
                 ? GameStatus.IN_PROGRESS
@@ -89,23 +96,15 @@ public class GameService {
             }
         }
         game.setDifficulty(difficulty);
+        game.prepareClock(control.initialMs(), control.incrementMs());
+
+        // A game that is playable immediately starts its clock now; a waiting one starts on join.
+        if (status == GameStatus.IN_PROGRESS) {
+            game.startClock(Instant.now());
+        }
 
         Game saved = repository.saveAndFlush(game);
-
-        outbox.publish(
-                EventType.GAME_CREATED,
-                PRODUCER,
-                saved.getId(),
-                null,
-                new GameCreated(
-                        saved.getId(),
-                        saved.getMode().name(),
-                        saved.getWhiteUserId(),
-                        saved.getBlackUserId(),
-                        saved.getAiColor() == null ? null : saved.getAiColor().name(),
-                        saved.getCreatedAt()));
-
-        // The human may have chosen the computer to move first.
+        publishGameCreated(saved);
         requestEngineMoveIfNeeded(saved);
 
         return GameMapper.toDto(saved);
@@ -130,25 +129,17 @@ public class GameService {
             return Optional.empty();
         }
 
+        TimeControl control = TimeControl.from(match.timeControl());
+
         Game game = new Game(
                 match.gameId(), GameMode.HUMAN_VS_HUMAN, GameStatus.IN_PROGRESS, ChessRules.START_FEN);
         game.seatWhite(match.whiteUserId(), normalizeName(match.whiteDisplayName(), "White"));
         game.seatBlack(match.blackUserId(), normalizeName(match.blackDisplayName(), "Black"));
+        game.prepareClock(control.initialMs(), control.incrementMs());
+        game.startClock(Instant.now());
 
         Game saved = repository.saveAndFlush(game);
-
-        outbox.publish(
-                EventType.GAME_CREATED,
-                PRODUCER,
-                saved.getId(),
-                null,
-                new GameCreated(
-                        saved.getId(),
-                        saved.getMode().name(),
-                        saved.getWhiteUserId(),
-                        saved.getBlackUserId(),
-                        null,
-                        saved.getCreatedAt()));
+        publishGameCreated(saved);
 
         log.info("created game {} from match {}", saved.getId(), match.matchId());
         return Optional.of(GameMapper.toDto(saved));
@@ -187,6 +178,7 @@ public class GameService {
         }
 
         game.setStatus(GameStatus.IN_PROGRESS);
+        game.startClock(Instant.now());
         return GameMapper.toDto(repository.saveAndFlush(game));
     }
 
@@ -203,19 +195,7 @@ public class GameService {
         }
         authorizeMove(game, userId);
 
-        String from = request.from();
-        String to = request.to();
-        String promotion = request.promotion();
-
-        ChessRules.AppliedMove applied = ChessRules.apply(game.getFen(), from, to, promotion);
-        if (applied == null) {
-            throw new IllegalMoveException(uciOf(request) + " is not a legal move");
-        }
-
-        Game saved = recordMove(game, from, to, promotion, applied, userId);
-        requestEngineMoveIfNeeded(saved);
-
-        return GameMapper.toDto(saved);
+        return applyMove(game, request.from(), request.to(), request.promotion(), userId);
     }
 
     /**
@@ -241,7 +221,8 @@ public class GameService {
         if (!game.getStatus().equals(GameStatus.IN_PROGRESS)) {
             return Optional.empty();
         }
-        if (ChessRules.turnOf(game.getFen()) != game.getAiColor()) {
+        PlayerColor turn = ChessRules.turnOf(game.getFen());
+        if (turn != game.getAiColor()) {
             return Optional.empty();
         }
 
@@ -256,13 +237,12 @@ public class GameService {
         String to = uci.substring(2, 4);
         String promotion = uci.length() > 4 ? uci.substring(4, 5) : null;
 
-        ChessRules.AppliedMove applied = ChessRules.apply(game.getFen(), from, to, promotion);
-        if (applied == null) {
+        try {
+            return Optional.of(applyMove(game, from, to, promotion, null));
+        } catch (IllegalMoveException illegal) {
             log.warn("engine returned {} which is not legal in game {}", uci, game.getId());
             return Optional.empty();
         }
-
-        return Optional.of(GameMapper.toDto(recordMove(game, from, to, promotion, applied, null)));
     }
 
     @Transactional
@@ -279,20 +259,66 @@ public class GameService {
         }
 
         game.setStatus(seat == PlayerColor.WHITE ? GameStatus.BLACK_WON : GameStatus.WHITE_WON);
+        game.setEndReason(GameEndReason.RESIGNATION);
+        game.stopClock();
         Game saved = repository.saveAndFlush(game);
         publishGameEnded(saved);
 
         return GameMapper.toDto(saved);
     }
 
-    /** Validates, persists, and announces one move. The single path every move takes. */
-    private Game recordMove(
-            Game game,
-            String from,
-            String to,
-            String promotion,
-            ChessRules.AppliedMove applied,
-            String byUserId) {
+    /**
+     * Ends games whose clock has run out while nobody was moving.
+     *
+     * <p>Server-side on purpose: the client cannot be trusted to report its own flag fall, and a
+     * disconnected player must still lose on time.
+     */
+    @Scheduled(
+            fixedDelayString = "${ccmmd.game.timeout-sweep-ms:5000}",
+            initialDelayString = "${ccmmd.game.timeout-sweep-initial-ms:15000}")
+    @Transactional
+    public void sweepTimeouts() {
+        Instant now = Instant.now();
+
+        for (Game game : repository.findByStatus(GameStatus.IN_PROGRESS)) {
+            if (!game.hasClock() || game.getClockStartedAt() == null) {
+                continue;
+            }
+            PlayerColor toMove = ChessRules.turnOf(game.getFen());
+            long elapsed = Math.max(0L, Duration.between(game.getClockStartedAt(), now).toMillis());
+            if (game.remainingMs(toMove) - elapsed > 0) {
+                continue;
+            }
+            log.info("game {} lost on time ({} flagged)", game.getId(), toMove);
+            publisher.gameUpdated(applyTimeout(game, toMove));
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // move application
+    // ------------------------------------------------------------------------------------------
+
+    private GameDto applyMove(Game game, String from, String to, String promotion, String byUserId) {
+        PlayerColor mover = ChessRules.turnOf(game.getFen());
+        Instant now = Instant.now();
+
+        long remainingMs = 0L;
+        if (game.hasClock()) {
+            long elapsed = game.getClockStartedAt() == null
+                    ? 0L
+                    : Math.max(0L, Duration.between(game.getClockStartedAt(), now).toMillis());
+            remainingMs = game.remainingMs(mover) - elapsed;
+
+            // Tried to move with no time left: the game is lost on time, and no move is applied.
+            if (remainingMs <= 0) {
+                return applyTimeout(game, mover);
+            }
+        }
+
+        ChessRules.AppliedMove applied = ChessRules.apply(game.getFen(), from, to, promotion);
+        if (applied == null) {
+            throw new IllegalMoveException(uciOf(from, to, promotion) + " is not a legal move");
+        }
 
         int ply = game.getMoves().size() + 1;
         game.appendMove(new MoveRecord(
@@ -303,7 +329,24 @@ public class GameService {
                 applied.uci(),
                 applied.fenAfter()));
         game.setFen(applied.fenAfter());
-        game.setStatus(applied.status());
+
+        GameStatus status = applied.status();
+        GameEndReason reason = applied.reason();
+
+        // chesslib cannot see repetition from a bare FEN; this service owns the history.
+        if (status == GameStatus.IN_PROGRESS && isThreefoldRepetition(game)) {
+            status = GameStatus.DRAW;
+            reason = GameEndReason.THREEFOLD_REPETITION;
+        }
+
+        game.setStatus(status);
+        game.setEndReason(reason);
+
+        if (status.isOver()) {
+            game.stopClock();
+        } else if (game.hasClock()) {
+            game.chargeClock(mover, remainingMs, now);
+        }
 
         Game saved = repository.saveAndFlush(game);
 
@@ -317,9 +360,69 @@ public class GameService {
 
         if (saved.getStatus().isOver()) {
             publishGameEnded(saved);
+        } else {
+            // If that move handed the turn to the computer, ask the engine for its reply.
+            requestEngineMoveIfNeeded(saved);
         }
 
-        return saved;
+        return GameMapper.toDto(saved);
+    }
+
+    private GameDto applyTimeout(Game game, PlayerColor flagged) {
+        game.setStatus(flagged == PlayerColor.WHITE ? GameStatus.BLACK_WON : GameStatus.WHITE_WON);
+        game.setEndReason(GameEndReason.TIMEOUT);
+        game.stopClock();
+
+        Game saved = repository.saveAndFlush(game);
+        publishGameEnded(saved);
+        return GameMapper.toDto(saved);
+    }
+
+    /**
+     * Threefold repetition, counted over the positions the game has actually held.
+     *
+     * <p>Compared on the first four FEN fields only — board, side, castling rights, en-passant
+     * target. The halfmove and fullmove counters differ between otherwise identical positions, and
+     * including them would mean repetition never matched.
+     */
+    private static boolean isThreefoldRepetition(Game game) {
+        String key = repetitionKey(game.getFen());
+
+        long occurrences = game.getMoves().stream()
+                .filter(move -> key.equals(repetitionKey(move.getFenAfter())))
+                .count();
+
+        if (repetitionKey(ChessRules.START_FEN).equals(key)) {
+            occurrences++;
+        }
+        return occurrences >= 3;
+    }
+
+    static String repetitionKey(String fen) {
+        String[] fields = fen.split(" ");
+        if (fields.length < 4) {
+            return fen;
+        }
+        return fields[0] + " " + fields[1] + " " + fields[2] + " " + fields[3];
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // events
+    // ------------------------------------------------------------------------------------------
+
+    private void publishGameCreated(Game game) {
+        outbox.publish(
+                EventType.GAME_CREATED,
+                PRODUCER,
+                game.getId(),
+                null,
+                new GameCreated(
+                        game.getId(),
+                        game.getMode().name(),
+                        game.getWhiteUserId(),
+                        game.getBlackUserId(),
+                        game.getAiColor() == null ? null : game.getAiColor().name(),
+                        game.getCreatedAt()));
     }
 
     private void publishGameEnded(Game game) {
@@ -406,8 +509,8 @@ public class GameService {
         return promotion == null || promotion.isBlank() ? null : promotion.trim().toUpperCase(Locale.ROOT);
     }
 
-    private static String uciOf(MoveRequest request) {
-        String promo = request.promotion() == null ? "" : request.promotion().toLowerCase(Locale.ROOT);
-        return request.from().toLowerCase(Locale.ROOT) + request.to().toLowerCase(Locale.ROOT) + promo;
+    private static String uciOf(String from, String to, String promotion) {
+        String promo = promotion == null ? "" : promotion.toLowerCase(Locale.ROOT);
+        return from.toLowerCase(Locale.ROOT) + to.toLowerCase(Locale.ROOT) + promo;
     }
 }

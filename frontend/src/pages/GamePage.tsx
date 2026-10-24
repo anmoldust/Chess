@@ -17,6 +17,21 @@ const STATUS_LABEL: Record<string, string> = {
   DRAW: 'Draw',
 };
 
+const END_REASON_LABEL: Record<string, string> = {
+  CHECKMATE: 'by checkmate',
+  RESIGNATION: 'by resignation',
+  TIMEOUT: 'on time',
+  STALEMATE: 'by stalemate',
+  INSUFFICIENT_MATERIAL: 'insufficient material',
+  FIFTY_MOVE_RULE: 'fifty-move rule',
+  THREEFOLD_REPETITION: 'threefold repetition',
+};
+
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 export function GamePage({ gameId }: { gameId: string }) {
   const user = useAuthStore((s) => s.user);
   const game = useGameStore((s) => s.game);
@@ -33,6 +48,27 @@ export function GamePage({ gameId }: { gameId: string }) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [copied, setCopied] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
+
+  // Clocks: the server sends remaining milliseconds at snapshot time. We tick locally for the side
+  // to move and resync on every broadcast, rather than trusting a client-side countdown.
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const receivedAtRef = useRef(Date.now());
+  const clockVersionRef = useRef(-1);
+
+  if (game && game.version !== clockVersionRef.current) {
+    clockVersionRef.current = game.version;
+    receivedAtRef.current = Date.now();
+  }
+
+  const clockRunning = Boolean(game) && game?.status === 'IN_PROGRESS';
+
+  useEffect(() => {
+    if (!clockRunning) {
+      return;
+    }
+    const timer = window.setInterval(() => setClockNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [clockRunning]);
 
   useEffect(() => {
     let active = true;
@@ -175,6 +211,12 @@ export function GamePage({ gameId }: { gameId: string }) {
   }
 
   const orientation = myColor === 'BLACK' ? 'black' : 'white';
+
+  const clockElapsed = game.status === 'IN_PROGRESS' ? Math.max(0, clockNow - receivedAtRef.current) : 0;
+  const whiteRemaining =
+    game.whiteTimeMs === null ? null : Math.max(0, game.whiteTimeMs - (game.turn === 'WHITE' ? clockElapsed : 0));
+  const blackRemaining =
+    game.blackTimeMs === null ? null : Math.max(0, game.blackTimeMs - (game.turn === 'BLACK' ? clockElapsed : 0));
   const canJoin = game.status === 'WAITING_FOR_OPPONENT' && myColor === null && !isAi;
 
   const join = () => {
@@ -212,6 +254,18 @@ export function GamePage({ gameId }: { gameId: string }) {
   return (
     <div className="game-layout">
       <section className="game-board">
+        {blackRemaining !== null && whiteRemaining !== null && (
+          <div className="clocks">
+            <span className={game.turn === 'BLACK' ? 'clock active' : 'clock'}>
+              {game.blackPlayer ?? 'Black'}
+              <b className={blackRemaining < 20_000 ? 'low' : ''}>{formatClock(blackRemaining)}</b>
+            </span>
+            <span className={game.turn === 'WHITE' ? 'clock active' : 'clock'}>
+              {game.whitePlayer ?? 'White'}
+              <b className={whiteRemaining < 20_000 ? 'low' : ''}>{formatClock(whiteRemaining)}</b>
+            </span>
+          </div>
+        )}
         <ChessBoard fen={game.fen} orientation={orientation} canMove={canMove} onMove={handleMove} />
       </section>
 
@@ -224,6 +278,7 @@ export function GamePage({ gameId }: { gameId: string }) {
             </span>
           </div>
           {game.result && <p className="result">{game.result}</p>}
+          {game.endReason && <p className="muted small">{END_REASON_LABEL[game.endReason] ?? game.endReason}</p>}
           <ul className="players">
             <li className={game.turn === 'WHITE' ? 'active' : ''}>
               <span className="dot dot-white" /> {game.whitePlayer ?? '—'}
