@@ -1,15 +1,22 @@
 package com.ccmmd.chess.gameservice.web;
 
 import com.ccmmd.chess.gameservice.domain.GameStatus;
+import com.ccmmd.chess.gameservice.dto.GameDto;
+import com.ccmmd.chess.gameservice.service.GameEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,6 +33,10 @@ class GameControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** Captures broadcasts so a test can assert a mutation reached the game's topic. */
+    @MockBean
+    private GameEventPublisher publisher;
 
     private static org.springframework.test.web.servlet.request.RequestPostProcessor asUser(String userId, String name) {
         return jwt().jwt(builder -> builder.subject(userId).claim("name", name));
@@ -115,5 +126,20 @@ class GameControllerTest {
         mockMvc.perform(get("/api/games").param("status", GameStatus.WAITING_FOR_OPPONENT.name()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("WAITING_FOR_OPPONENT"));
+    }
+
+    @Test
+    @DisplayName("a REST draw offer is broadcast, so the opponent sees it without refreshing")
+    void drawOfferIsBroadcast() throws Exception {
+        String id = createGame("user-white", "HUMAN_VS_HUMAN");
+        mockMvc.perform(post("/api/games/" + id + "/join").with(asUser("user-black", "Black")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/games/" + id + "/draw").with(asUser("user-white", "White")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<GameDto> sent = ArgumentCaptor.forClass(GameDto.class);
+        verify(publisher, atLeastOnce()).gameUpdated(sent.capture());
+        assertThat(sent.getAllValues()).anyMatch(game -> game.drawOfferBy() != null);
     }
 }

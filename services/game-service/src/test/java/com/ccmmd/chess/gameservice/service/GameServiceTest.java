@@ -493,4 +493,67 @@ class GameServiceTest {
         assertThatThrownBy(() -> gameService.offerDraw(game.id(), RAJAT))
                 .isInstanceOf(GameConflictException.class);
     }
+
+    @Test
+    @DisplayName("a rematch starts only once both players ask, with the colours swapped")
+    void rematchStartsOnceBothAsk() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.resign(game.id(), SAM); // white (rajat) wins
+
+        GameDto offer = gameService.rematch(game.id(), RAJAT);
+        assertThat(offer.rematchOfferBy()).isEqualTo(PlayerColor.WHITE);
+        assertThat(offer.rematchGameId()).isNull();
+
+        GameDto agreed = gameService.rematch(game.id(), SAM);
+        assertThat(agreed.rematchGameId()).isNotBlank();
+
+        GameDto next = gameService.getGame(agreed.rematchGameId());
+        assertThat(next.status()).isEqualTo(GameStatus.IN_PROGRESS);
+        // Swapped: sam was black and now has white.
+        assertThat(next.whiteUserId()).isEqualTo(SAM);
+        assertThat(next.blackUserId()).isEqualTo(RAJAT);
+    }
+
+    @Test
+    @DisplayName("asking twice does not start a rematch on your own")
+    void askingTwiceDoesNotStartARematch() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.resign(game.id(), SAM);
+        gameService.rematch(game.id(), RAJAT);
+
+        GameDto again = gameService.rematch(game.id(), RAJAT);
+
+        assertThat(again.rematchOfferBy()).isEqualTo(PlayerColor.WHITE);
+        assertThat(again.rematchGameId()).isNull();
+    }
+
+    @Test
+    @DisplayName("a game still in progress cannot be rematched")
+    void cannotRematchMidGame() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        assertThatThrownBy(() -> gameService.rematch(game.id(), RAJAT))
+                .isInstanceOf(GameConflictException.class);
+    }
+
+    @Test
+    @DisplayName("a game against the computer cannot be rematched")
+    void cannotRematchAiGame() {
+        GameDto game = newAiGame(RAJAT, "rajat", PlayerColor.WHITE);
+
+        assertThatThrownBy(() -> gameService.rematch(game.id(), RAJAT))
+                .isInstanceOf(GameConflictException.class);
+    }
+
+    @Test
+    @DisplayName("a game is created with the time control it was asked for")
+    void createHonoursTimeControl() {
+        GameDto rapid = gameService.createGame(
+                new CreateGameRequest(GameMode.HUMAN_VS_HUMAN, PlayerColor.WHITE, null, "RAPID"),
+                RAJAT, "rajat");
+
+        assertThat(rapid.timeControl()).isEqualTo("RAPID");
+        assertThat(rapid.whiteTimeMs()).isEqualTo(900_000L);
+        assertThat(rapid.incrementMs()).isEqualTo(10_000L);
+    }
 }

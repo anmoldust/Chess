@@ -10,6 +10,7 @@ import com.ccmmd.chess.gameservice.domain.PlayerColor;
 import com.ccmmd.chess.gameservice.domain.TimeControl;
 import com.ccmmd.chess.gameservice.dto.CreateGameRequest;
 import com.ccmmd.chess.gameservice.dto.GameDto;
+import com.ccmmd.chess.gameservice.dto.GameSummaryDto;
 import com.ccmmd.chess.gameservice.dto.MoveRequest;
 import com.ccmmd.chess.gameservice.exception.GameConflictException;
 import com.ccmmd.chess.gameservice.exception.GameNotFoundException;
@@ -26,6 +27,7 @@ import com.ccmmd.chess.platform.messaging.OutboxPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
@@ -151,6 +153,21 @@ public class GameService {
                 ? repository.findByStatusOrderByCreatedAtDesc(status)
                 : repository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
         return games.stream().map(GameMapper::toDto).toList();
+    }
+
+    /**
+     * A player's finished games, newest first.
+     *
+     * <p>Finished only: a history that included games still waiting for an opponent would mostly
+     * be noise. Public like every other read here — a watchable game is a watchable game.
+     */
+    @Transactional(readOnly = true)
+    public List<GameSummaryDto> history(String userId, int limit) {
+        int bounded = Math.max(1, Math.min(limit, 100));
+        List<GameStatus> finished = List.of(GameStatus.WHITE_WON, GameStatus.BLACK_WON, GameStatus.DRAW);
+        return repository.findForPlayer(userId, finished, PageRequest.of(0, bounded)).stream()
+                .map(GameMapper::toSummary)
+                .toList();
     }
 
     @Transactional
@@ -328,6 +345,59 @@ public class GameService {
 
         Game saved = repository.saveAndFlush(game);
         publishGameEnded(saved);
+        return GameMapper.toDto(saved);
+    }
+
+    /**
+     * Offers a rematch — or accepts one. As with draws, offering back is the acceptance: one verb,
+     * one button, and no way to half-accept twice.
+     *
+     * <p>When both sides have asked, a new game is created with the colours swapped and the same
+     * clock, and the finished game is stamped with the new game's id so both clients can follow.
+     */
+    @Transactional
+    public GameDto rematch(String id, String userId) {
+        requireSignedIn(userId, "offer a rematch");
+
+        Game game = require(id);
+        if (game.getMode() != GameMode.HUMAN_VS_HUMAN) {
+            throw new GameConflictException("A game against the computer cannot be rematched");
+        }
+        if (!game.getStatus().isOver()) {
+            throw new GameConflictException("Game " + id + " is not over");
+        }
+        if (game.getRematchGameId() != null) {
+            return GameMapper.toDto(game); // already rematched; a second ask is a no-op
+        }
+
+        PlayerColor seat = seatedColor(game, userId);
+        PlayerColor open = game.getRematchOfferBy();
+        if (open != null && open != seat) {
+            return startRematch(game);
+        }
+        if (open == seat) {
+            return GameMapper.toDto(game); // already offered; idempotent
+        }
+
+        game.offerRematch(seat);
+        return GameMapper.toDto(repository.saveAndFlush(game));
+    }
+
+    private GameDto startRematch(Game game) {
+        Game next = new Game(
+                UUID.randomUUID().toString(), GameMode.HUMAN_VS_HUMAN, GameStatus.IN_PROGRESS, ChessRules.START_FEN);
+        // Colours swap, so the player who had white gets black — the usual convention.
+        next.seatWhite(game.getBlackUserId(), game.getBlackName());
+        next.seatBlack(game.getWhiteUserId(), game.getWhiteName());
+        next.prepareClock(game.getInitialMs(), game.getIncrementMs());
+        next.startClock(Instant.now());
+        Game savedNext = repository.saveAndFlush(next);
+
+        game.clearRematchOffer();
+        game.setRematchGameId(savedNext.getId());
+        Game saved = repository.saveAndFlush(game);
+
+        publishGameCreated(savedNext);
         return GameMapper.toDto(saved);
     }
 

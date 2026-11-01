@@ -42,4 +42,19 @@ public enum TimeControl {
             return BLITZ;
         }
     }
+
+    /**
+     * The control with this exact clock, or null for one this enum does not name.
+     *
+     * <p>Lets a game report the control it was created with without storing the name separately —
+     * the two numbers are the clock, and they are enough to recover the control.
+     */
+    public static TimeControl of(long initialMs, long incrementMs) {
+        for (TimeControl control : values()) {
+            if (control.initialMs == initialMs && control.incrementMs == incrementMs) {
+                return control;
+            }
+        }
+        return null;
+    }
 }

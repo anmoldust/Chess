@@ -5,7 +5,9 @@ import com.ccmmd.chess.gameservice.domain.Game;
 import com.ccmmd.chess.gameservice.domain.GameStatus;
 import com.ccmmd.chess.gameservice.domain.MoveRecord;
 import com.ccmmd.chess.gameservice.domain.PlayerColor;
+import com.ccmmd.chess.gameservice.domain.TimeControl;
 import com.ccmmd.chess.gameservice.dto.GameDto;
+import com.ccmmd.chess.gameservice.dto.GameSummaryDto;
 import com.ccmmd.chess.gameservice.dto.MoveDto;
 
 import java.util.List;
@@ -13,6 +15,21 @@ import java.util.List;
 public final class GameMapper {
 
     private GameMapper() {
+    }
+
+    public static GameSummaryDto toSummary(Game game) {
+        return new GameSummaryDto(
+                game.getId(),
+                game.getStatus(),
+                game.getMode(),
+                game.getWhiteName(),
+                game.getBlackName(),
+                game.getWhiteUserId(),
+                game.getBlackUserId(),
+                resultOf(game.getStatus()),
+                game.getEndReason(),
+                game.getMoves().size(),
+                game.getCreatedAt());
     }
 
     public static GameDto toDto(Game game) {
@@ -25,6 +42,7 @@ public final class GameMapper {
                 game.getFen(),
                 game.getStatus(),
                 game.getMode(),
+                timeControlOf(game),
                 game.getWhiteName(),
                 game.getBlackName(),
                 game.getWhiteUserId(),
@@ -34,6 +52,8 @@ public final class GameMapper {
                 resultOf(game.getStatus()),
                 game.getEndReason(),
                 game.getDrawOfferBy(),
+                game.getRematchOfferBy(),
+                game.getRematchGameId(),
                 game.hasClock() ? game.remainingMs(PlayerColor.WHITE) : null,
                 game.hasClock() ? game.remainingMs(PlayerColor.BLACK) : null,
                 game.getIncrementMs(),
@@ -59,5 +79,11 @@ public final class GameMapper {
             case DRAW -> "1/2-1/2";
             default -> null;
         };
+    }
+
+    /** The control's name, recovered from its clock; null when the clock has no matching name. */
+    private static String timeControlOf(Game game) {
+        TimeControl control = TimeControl.of(game.getInitialMs(), game.getIncrementMs());
+        return control == null ? null : control.name();
     }
 }

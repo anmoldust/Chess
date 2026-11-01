@@ -87,6 +87,15 @@ public class Game {
     @Column(name = "draw_offer_by", length = 8)
     private PlayerColor drawOfferBy;
 
+    /** Which side has asked for a rematch, or null. Both sides asking is what starts one. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rematch_offer_by", length = 8)
+    private PlayerColor rematchOfferBy;
+
+    /** Set on the finished game once a rematch is agreed, pointing at the new game. */
+    @Column(name = "rematch_game_id", length = 36)
+    private String rematchGameId;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "game_moves", joinColumns = @JoinColumn(name = "game_id"))
     @OrderColumn(name = "move_index")
@@ -208,6 +217,11 @@ public class Game {
         return incrementMs;
     }
 
+    /** The starting budget, so a rematch can be given the same clock as the game it follows. */
+    public long getInitialMs() {
+        return initialMs == null ? 0L : initialMs;
+    }
+
     public GameEndReason getEndReason() {
         return endReason;
     }
@@ -227,6 +241,29 @@ public class Game {
 
     public void clearDrawOffer() {
         this.drawOfferBy = null;
+        touch();
+    }
+
+    public PlayerColor getRematchOfferBy() {
+        return rematchOfferBy;
+    }
+
+    public void offerRematch(PlayerColor color) {
+        this.rematchOfferBy = color;
+        touch();
+    }
+
+    public void clearRematchOffer() {
+        this.rematchOfferBy = null;
+        touch();
+    }
+
+    public String getRematchGameId() {
+        return rematchGameId;
+    }
+
+    public void setRematchGameId(String rematchGameId) {
+        this.rematchGameId = rematchGameId;
         touch();
     }
 
