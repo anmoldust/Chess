@@ -29,6 +29,14 @@ export interface AuthStatus {
 }
 
 /**
+ * The response to a reset request. `token` is non-null only when the backend is running with
+ * development-only token exposure on; production sends the link by email instead.
+ */
+export interface PasswordResetResponse {
+  token: string | null;
+}
+
+/**
  * What register/login actually return: the account *inside* a wrapper, alongside the token.
  * The client only ever uses `.user` — the token stays server-side in the gateway session.
  */
@@ -52,6 +60,8 @@ export interface GameDto {
   fen: string;
   status: GameStatus;
   mode: GameMode;
+  /** The named time control (BULLET/BLITZ/RAPID/CLASSICAL), or null for an unnamed clock. */
+  timeControl: string | null;
   whitePlayer: string | null;
   blackPlayer: string | null;
   whiteUserId: string | null;
@@ -63,12 +73,40 @@ export interface GameDto {
   endReason: GameEndReason | null;
   /** The side with an open draw offer. The opponent accepts by offering back. */
   drawOfferBy: PlayerColor | null;
+  /** The side with an open rematch offer, or null. Both sides offering starts a new game. */
+  rematchOfferBy: PlayerColor | null;
+  /** Set once a rematch is agreed: the new game both clients should open. */
+  rematchGameId: string | null;
   /** Remaining milliseconds at the moment of this snapshot; the client ticks from there. */
   whiteTimeMs: number | null;
   blackTimeMs: number | null;
   incrementMs: number;
   moves: MoveDto[];
   version: number;
+}
+
+/** A game as it appears in a list — a history row, without the move list. */
+export interface GameSummaryDto {
+  id: string;
+  status: GameStatus;
+  mode: GameMode;
+  whitePlayer: string | null;
+  blackPlayer: string | null;
+  whiteUserId: string | null;
+  blackUserId: string | null;
+  result: string | null;
+  endReason: GameEndReason | null;
+  plyCount: number;
+  createdAt: string;
+}
+
+/** One rating movement, for the progression list on a profile. */
+export interface RatingChangeDto {
+  gameId: string;
+  oldRating: number;
+  newRating: number;
+  delta: number;
+  playedAt: string;
 }
 
 export interface MoveRequest {
@@ -107,6 +145,17 @@ export interface PresenceStatus {
   userId: string;
   online: boolean;
   gameId: string | null;
+}
+
+/** A player's competitive standing. The rating is the number matchmaking pairs on. */
+export interface RatingDto {
+  userId: string;
+  displayName: string | null;
+  rating: number;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
 }
 
 /**

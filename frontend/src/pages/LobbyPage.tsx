@@ -4,9 +4,21 @@ import { errorMessage } from '../lib/errors';
 import { navigate } from '../lib/useHashRoute';
 import { useAuthStore } from '../store/authStore';
 import { useGameStore } from '../store/gameStore';
-import type { GameDto, GameMode, NotificationDto, PlayerColor } from '../types';
+import type { GameDto, GameMode, NotificationDto, PlayerColor, RatingDto } from '../types';
 
-const TIME_CONTROLS = ['BLITZ', 'RAPID', 'CLASSICAL'];
+const TIME_CONTROLS = [
+  { value: 'BULLET', label: 'Bullet 1+0' },
+  { value: 'BLITZ', label: 'Blitz 5+2' },
+  { value: 'RAPID', label: 'Rapid 15+10' },
+  { value: 'CLASSICAL', label: 'Classical 30+30' },
+];
+
+const DEFAULT_TIME_CONTROL = 'BLITZ';
+
+function timeControlLabel(value: string | null): string {
+  if (!value) return '';
+  return TIME_CONTROLS.find((control) => control.value === value)?.label ?? value;
+}
 
 export function LobbyPage() {
   const user = useAuthStore((s) => s.user);
@@ -19,9 +31,12 @@ export function LobbyPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [timeControl, setTimeControl] = useState(TIME_CONTROLS[0]);
+  const [timeControl, setTimeControl] = useState(DEFAULT_TIME_CONTROL);
+  const [createTimeControl, setCreateTimeControl] = useState(DEFAULT_TIME_CONTROL);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [myRating, setMyRating] = useState<RatingDto | null>(null);
+  const [leaderboard, setLeaderboard] = useState<RatingDto[]>([]);
 
   const refreshGames = useCallback(async () => {
     try {
@@ -39,16 +54,31 @@ export function LobbyPage() {
     }
   }, []);
 
+  const refreshRatings = useCallback(async () => {
+    try {
+      const [mine, board] = await Promise.all([api.ratings.me(), api.ratings.leaderboard(10)]);
+      setMyRating(mine);
+      setLeaderboard(board);
+    } catch {
+      // Ratings are an enhancement just like notifications; never break the lobby over them.
+    }
+  }, []);
+
   useEffect(() => {
     void refreshGames();
     void refreshNotifications();
-  }, [refreshGames, refreshNotifications]);
+    void refreshRatings();
+  }, [refreshGames, refreshNotifications, refreshRatings]);
 
   const create = async () => {
     setBusy(true);
     setError(null);
     try {
-      const game = await api.createGame({ mode, preferredColor: color });
+      const game = await api.createGame({
+        mode,
+        preferredColor: color,
+        timeControl: createTimeControl,
+      });
       setGame(game);
       navigate({ name: 'game', id: game.id });
     } catch (e) {
@@ -143,8 +173,8 @@ export function LobbyPage() {
             disabled={queuePosition !== null}
           >
             {TIME_CONTROLS.map((tc) => (
-              <option key={tc} value={tc}>
-                {tc.charAt(0) + tc.slice(1).toLowerCase()}
+              <option key={tc.value} value={tc.value}>
+                {tc.label}
               </option>
             ))}
           </select>
@@ -169,6 +199,17 @@ export function LobbyPage() {
         <p className="muted">
           Playing as <strong>{user?.displayName}</strong>
         </p>
+        {myRating && (
+          <p className="muted">
+            Rating <strong>{myRating.rating}</strong>
+            {myRating.gamesPlayed > 0 && (
+              <span>
+                {' '}
+                · {myRating.wins}W {myRating.losses}L {myRating.draws}D
+              </span>
+            )}
+          </p>
+        )}
         <label className="field">
           Mode
           <select value={mode} onChange={(e) => setMode(e.target.value as GameMode)}>
@@ -182,6 +223,16 @@ export function LobbyPage() {
             <option value="WHITE">White</option>
             <option value="BLACK">Black</option>
             <option value="RANDOM">Random</option>
+          </select>
+        </label>
+        <label className="field">
+          Time control
+          <select value={createTimeControl} onChange={(e) => setCreateTimeControl(e.target.value)}>
+            {TIME_CONTROLS.map((tc) => (
+              <option key={tc.value} value={tc.value}>
+                {tc.label}
+              </option>
+            ))}
           </select>
         </label>
         <button disabled={busy} onClick={() => void create()}>
@@ -203,6 +254,9 @@ export function LobbyPage() {
               <span>
                 {game.whitePlayer ?? 'Unknown'}{' '}
                 <span className="muted">{game.mode === 'HUMAN_VS_AI' ? 'AI' : 'online'}</span>
+                {game.timeControl && (
+                  <span className="muted"> · {timeControlLabel(game.timeControl)}</span>
+                )}
               </span>
               <button className="secondary" disabled={busy} onClick={() => void join(game.id)}>
                 Join
@@ -238,6 +292,28 @@ export function LobbyPage() {
             <li key={n.id}>
               <span className={n.kind === 'GAME_ENDED' ? 'pill pill-result' : 'pill'}>{n.kind}</span>
               <span>{n.message}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="panel">
+        <div className="row">
+          <h2>Leaderboard</h2>
+          <button className="secondary" onClick={() => void refreshRatings()}>
+            Refresh
+          </button>
+        </div>
+        {leaderboard.length === 0 && <p className="muted">No ranked games yet.</p>}
+        <ul className="game-list">
+          {leaderboard.map((entry, index) => (
+            <li key={entry.userId}>
+              <span>
+                <span className="muted">{index + 1}. </span>
+                {entry.displayName ?? 'Player'}
+                {entry.userId === user?.id && <span className="muted small"> (you)</span>}
+              </span>
+              <span className="pill pill-result">{entry.rating}</span>
             </li>
           ))}
         </ul>

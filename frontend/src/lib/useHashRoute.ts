@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 
-export type Route = { name: 'lobby' } | { name: 'game'; id: string };
+export type Route = { name: 'lobby' } | { name: 'game'; id: string } | { name: 'profile' };
 
 function parse(hash: string): Route {
   const match = hash.match(/^#\/game\/([^/?#]+)/);
   if (match) {
     return { name: 'game', id: decodeURIComponent(match[1]) };
+  }
+  if (/^#\/profile\b/.test(hash)) {
+    return { name: 'profile' };
   }
   return { name: 'lobby' };
 }
@@ -23,5 +26,11 @@ export function useHashRoute(): Route {
 }
 
 export function navigate(route: Route): void {
-  window.location.hash = route.name === 'game' ? `#/game/${encodeURIComponent(route.id)}` : '#/';
+  if (route.name === 'game') {
+    window.location.hash = `#/game/${encodeURIComponent(route.id)}`;
+  } else if (route.name === 'profile') {
+    window.location.hash = '#/profile';
+  } else {
+    window.location.hash = '#/';
+  }
 }

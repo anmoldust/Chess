@@ -4,6 +4,7 @@ import { AuthPanel } from './components/AuthPanel';
 import { navigate, useHashRoute } from './lib/useHashRoute';
 import { GamePage } from './pages/GamePage';
 import { LobbyPage } from './pages/LobbyPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { useAuthStore } from './store/authStore';
 
 export function App() {
@@ -66,7 +67,9 @@ export function App() {
         </a>
         {user && (
           <div className="header-user">
-            <span className="muted">{user.displayName}</span>
+            <button className="link" onClick={() => navigate({ name: 'profile' })}>
+              {user.displayName}
+            </button>
             <button className="secondary" onClick={() => void signOut()}>
               Sign out
             </button>
@@ -81,6 +84,8 @@ export function App() {
           <AuthPanel />
         ) : route.name === 'game' ? (
           <GamePage key={route.id} gameId={route.id} />
+        ) : route.name === 'profile' ? (
+          <ProfilePage />
         ) : (
           <LobbyPage />
         )}

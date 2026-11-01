@@ -408,3 +408,17 @@ button.secondary {
 .clock b.low {
   color: var(--danger);
 }
+
+.link {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  padding: 10px 0 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.link:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}

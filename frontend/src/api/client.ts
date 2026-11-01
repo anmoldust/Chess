@@ -3,12 +3,16 @@ import type {
   AuthStatus,
   GameDto,
   GameMode,
+  GameSummaryDto,
   MatchmakingStatus,
   MoveRequest,
   NotificationDto,
+  PasswordResetResponse,
   PlayerColor,
   PresenceStatus,
   QueueStatus,
+  RatingChangeDto,
+  RatingDto,
   TokenResponse,
   UserDto,
 } from '../types';
@@ -91,9 +95,21 @@ export const api = {
     logout(): Promise<void> {
       return request<void>('/auth/logout', { method: 'POST' });
     },
+
+    /** Always resolves the same way for a known or unknown address; the token is dev-only. */
+    forgotPassword(email: string): Promise<PasswordResetResponse> {
+      return request<PasswordResetResponse>('/auth/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+    },
+
+    resetPassword(body: { token: string; password: string }): Promise<void> {
+      return request<void>('/auth/password/reset', { method: 'POST', body: JSON.stringify(body) });
+    },
   },
 
-  createGame(body: { mode: GameMode; preferredColor: PlayerColor }): Promise<GameDto> {
+  createGame(body: { mode: GameMode; preferredColor: PlayerColor; timeControl: string }): Promise<GameDto> {
     return request<GameDto>('/games', { method: 'POST', body: JSON.stringify(body) });
   },
 
@@ -103,6 +119,13 @@ export const api = {
 
   listOpenGames(): Promise<GameDto[]> {
     return request<GameDto[]>('/games?status=WAITING_FOR_OPPONENT');
+  },
+
+  /** A player's finished games, newest first. Public, like every game read. */
+  listGameHistory(userId: string, limit = 20): Promise<GameSummaryDto[]> {
+    return request<GameSummaryDto[]>(
+      `/games/history?userId=${encodeURIComponent(userId)}&limit=${limit}`,
+    );
   },
 
   joinGame(id: string): Promise<GameDto> {
@@ -124,6 +147,11 @@ export const api = {
 
   declineDraw(id: string): Promise<GameDto> {
     return request<GameDto>(`/games/${id}/draw/decline`, { method: 'POST' });
+  },
+
+  /** Offers a rematch, or accepts the opponent's open offer. */
+  requestRematch(id: string): Promise<GameDto> {
+    return request<GameDto>(`/games/${id}/rematch`, { method: 'POST' });
   },
 
   matchmaking: {
@@ -167,6 +195,25 @@ export const api = {
   analysis: {
     forGame(gameId: string): Promise<AnalysisReport> {
       return request<AnalysisReport>(`/analysis/${gameId}`);
+    },
+  },
+
+  ratings: {
+    me(): Promise<RatingDto> {
+      return request<RatingDto>('/ratings/me');
+    },
+
+    forUser(userId: string): Promise<RatingDto> {
+      return request<RatingDto>(`/ratings/${userId}`);
+    },
+
+    leaderboard(limit = 10): Promise<RatingDto[]> {
+      return request<RatingDto[]>(`/ratings/leaderboard?limit=${limit}`);
+    },
+
+    /** A player's rating movements, newest first. */
+    history(userId: string, limit = 20): Promise<RatingChangeDto[]> {
+      return request<RatingChangeDto[]>(`/ratings/${userId}/history?limit=${limit}`);
     },
   },
 };

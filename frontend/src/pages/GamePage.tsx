@@ -4,10 +4,12 @@ import { ChessBoard } from '../components/ChessBoard';
 import { MoveList } from '../components/MoveList';
 import { chooseAiMove, type Difficulty } from '../engine';
 import { errorMessage } from '../lib/errors';
+import { resolvePremove } from '../lib/premove';
+import { navigate } from '../lib/useHashRoute';
 import { useAuthStore } from '../store/authStore';
 import { useGameStore } from '../store/gameStore';
 import { connectGameSocket, type GameSocket } from '../ws/socket';
-import type { AnalysisReport, MoveRequest, PlayerColor } from '../types';
+import type { AnalysisReport, MoveRequest, PlayerColor, RatingDto } from '../types';
 
 const STATUS_LABEL: Record<string, string> = {
   WAITING_FOR_OPPONENT: 'Waiting for an opponent',
@@ -48,6 +50,9 @@ export function GamePage({ gameId }: { gameId: string }) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [copied, setCopied] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
+  const [whiteRating, setWhiteRating] = useState<RatingDto | null>(null);
+  const [blackRating, setBlackRating] = useState<RatingDto | null>(null);
+  const [premove, setPremove] = useState<{ from: string; to: string } | null>(null);
 
   // Clocks: the server sends remaining milliseconds at snapshot time. We tick locally for the side
   // to move and resync on every broadcast, rather than trusting a client-side countdown.
@@ -113,6 +118,10 @@ export function GamePage({ gameId }: { gameId: string }) {
   const canMove =
     Boolean(game) && started && myColor !== null && (!isAi || game?.turn === myColor) && !aiThinking;
 
+  // A premove is made on the opponent's turn: it is queued now and attempted when it is our turn.
+  const canPremove =
+    Boolean(game) && started && myColor !== null && game?.turn !== myColor && !aiThinking;
+
   const submitMove = useCallback(
     (move: MoveRequest) => {
       setError(null);
@@ -134,6 +143,10 @@ export function GamePage({ gameId }: { gameId: string }) {
     },
     [submitMove],
   );
+
+  const handlePremove = useCallback((from: string, to: string) => {
+    setPremove({ from, to });
+  }, []);
 
   // Drive the engine when it is the computer's turn.
   useEffect(() => {
@@ -201,6 +214,64 @@ export function GamePage({ gameId }: { gameId: string }) {
     };
   }, [gameOver, analysisGameId]);
 
+  const whiteUserId = game?.whiteUserId ?? null;
+  const blackUserId = game?.blackUserId ?? null;
+  // Ratings live in matchmaking-service. Refetch once the game ends, because both numbers change
+  // with the result. A computer seat has no user id, so it simply has no rating.
+  const ratingsKey = gameOver ? game?.version : -1;
+
+  useEffect(() => {
+    let active = true;
+    const load = (userId: string | null, set: (rating: RatingDto | null) => void) => {
+      if (!userId) {
+        set(null);
+        return;
+      }
+      api.ratings
+        .forUser(userId)
+        .then((rating) => {
+          if (active) set(rating);
+        })
+        .catch(() => {
+          if (active) set(null);
+        });
+    };
+    load(whiteUserId, setWhiteRating);
+    load(blackUserId, setBlackRating);
+    return () => {
+      active = false;
+    };
+  }, [whiteUserId, blackUserId, ratingsKey]);
+
+  // A rematch hands back the new game's id; follow it.
+  const rematchGameId = game?.rematchGameId ?? null;
+  useEffect(() => {
+    if (rematchGameId) {
+      setGame(null);
+      navigate({ name: 'game', id: rematchGameId });
+    }
+  }, [rematchGameId, setGame]);
+
+  // Attempt the premove the moment it becomes our turn: play it if the position allows, drop it
+  // silently if it does not.
+  useEffect(() => {
+    if (!premove || !game || game.status !== 'IN_PROGRESS' || myColor === null || game.turn !== myColor) {
+      return;
+    }
+    const resolved = resolvePremove(game.fen, premove.from, premove.to);
+    setPremove(null);
+    if (resolved) {
+      submitMove({ from: premove.from, to: premove.to, promotion: resolved.promotion });
+    }
+  }, [game, premove, myColor, submitMove]);
+
+  // A premove only means anything while a game is live and we are a player in it.
+  useEffect(() => {
+    if (!started || myColor === null) {
+      setPremove(null);
+    }
+  }, [started, myColor]);
+
   const shareUrl = useMemo(
     () => `${window.location.origin}${window.location.pathname}#/game/${gameId}`,
     [gameId],
@@ -259,6 +330,14 @@ export function GamePage({ gameId }: { gameId: string }) {
       .catch((e) => setError(errorMessage(e)));
   };
 
+  const offerOrAcceptRematch = () => {
+    setError(null);
+    api
+      .requestRematch(gameId)
+      .then(setGame)
+      .catch((e) => setError(errorMessage(e)));
+  };
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -284,7 +363,15 @@ export function GamePage({ gameId }: { gameId: string }) {
             </span>
           </div>
         )}
-        <ChessBoard fen={game.fen} orientation={orientation} canMove={canMove} onMove={handleMove} />
+        <ChessBoard
+          fen={game.fen}
+          orientation={orientation}
+          canMove={canMove}
+          canPremove={canPremove}
+          premove={premove}
+          onMove={handleMove}
+          onPremove={handlePremove}
+        />
       </section>
 
       <aside className="game-side">
@@ -300,15 +387,20 @@ export function GamePage({ gameId }: { gameId: string }) {
           <ul className="players">
             <li className={game.turn === 'WHITE' ? 'active' : ''}>
               <span className="dot dot-white" /> {game.whitePlayer ?? '—'}
+              {whiteRating && <span className="muted small"> · {whiteRating.rating}</span>}
               {myColor === 'WHITE' && <span className="muted small"> (you)</span>}
             </li>
             <li className={game.turn === 'BLACK' ? 'active' : ''}>
               <span className="dot dot-black" /> {game.blackPlayer ?? '—'}
+              {blackRating && <span className="muted small"> · {blackRating.rating}</span>}
               {myColor === 'BLACK' && <span className="muted small"> (you)</span>}
             </li>
           </ul>
           {myColor === null && !canJoin && <p className="muted small">You are watching this game.</p>}
           {aiThinking && <p className="muted">Stockfish is thinking…</p>}
+          {premove && (
+            <p className="muted small">Premove queued — it plays if it is legal on your turn.</p>
+          )}
           {error && <p className="error">{error}</p>}
           <div className="actions">
             {canJoin && <button onClick={join}>Join this game</button>}
@@ -327,6 +419,15 @@ export function GamePage({ gameId }: { gameId: string }) {
             )}
             {started && myColor !== null && game.drawOfferBy === myColor && (
               <span className="muted small">Draw offered — waiting for your opponent…</span>
+            )}
+            {gameOver && myColor !== null && !isAi && game.rematchOfferBy === null && (
+              <button onClick={offerOrAcceptRematch}>Rematch</button>
+            )}
+            {gameOver && myColor !== null && !isAi && game.rematchOfferBy !== null && game.rematchOfferBy !== myColor && (
+              <button onClick={offerOrAcceptRematch}>Accept rematch</button>
+            )}
+            {gameOver && myColor !== null && !isAi && game.rematchOfferBy === myColor && (
+              <span className="muted small">Rematch offered — waiting for your opponent…</span>
             )}
             {started && myColor !== null && (
               <button className="secondary" onClick={resign}>
@@ -371,7 +472,9 @@ export function GamePage({ gameId }: { gameId: string }) {
                   <span className="muted">Moves</span>
                   <span>{analysis.movesAnalysed}</span>
                 </div>
-                {!analysis.engineBacked && (
+                {analysis.engineBacked ? (
+                  <p className="muted small">Evaluated with the engine.</p>
+                ) : (
                   <p className="muted small">
                     Material heuristic, not an engine evaluation — it catches hung pieces and
                     misses positional errors.
