@@ -19,8 +19,11 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -35,17 +38,26 @@ public class MatchmakingService {
     private final QueueRepository queueRepository;
     private final MatchRepository matchRepository;
     private final OutboxPublisher outbox;
+    private final RatingService ratingService;
     private final int maxPairsPerTick;
+    private final int ratingWindowBase;
+    private final int ratingWindowGrowthPerSecond;
 
     public MatchmakingService(
             QueueRepository queueRepository,
             MatchRepository matchRepository,
             OutboxPublisher outbox,
-            @Value("${ccmmd.matchmaking.max-pairs-per-tick:25}") int maxPairsPerTick) {
+            RatingService ratingService,
+            @Value("${ccmmd.matchmaking.max-pairs-per-tick:25}") int maxPairsPerTick,
+            @Value("${ccmmd.matchmaking.rating-window-base:100}") int ratingWindowBase,
+            @Value("${ccmmd.matchmaking.rating-window-growth-per-second:20}") int ratingWindowGrowthPerSecond) {
         this.queueRepository = queueRepository;
         this.matchRepository = matchRepository;
         this.outbox = outbox;
+        this.ratingService = ratingService;
         this.maxPairsPerTick = maxPairsPerTick;
+        this.ratingWindowBase = ratingWindowBase;
+        this.ratingWindowGrowthPerSecond = ratingWindowGrowthPerSecond;
     }
 
     @Transactional
@@ -63,6 +75,9 @@ public class MatchmakingService {
         QueueEntry entry = new QueueEntry(
                 UUID.randomUUID().toString(), userId, normalizeName(displayName), control);
         queueRepository.saveAndFlush(entry);
+
+        // Keep a name for the leaderboard, but only for a player who already has a rating row.
+        ratingService.rememberName(userId, entry.getDisplayName());
 
         outbox.publish(
                 EventType.PLAYER_QUEUED,
@@ -106,7 +121,7 @@ public class MatchmakingService {
     }
 
     /**
-     * Pairs the longest-waiting players with the same time control.
+     * Pairs waiting players, preferring the closest rating within the same time control.
      *
      * <p>Each pair is re-read under a row lock before being claimed: with more than one instance,
      * the candidate list is only a hint, and the lock plus the status re-check is what stops two
@@ -132,24 +147,77 @@ public class MatchmakingService {
             return 0;
         }
 
-        QueueEntry first = waiting.get(0);
-        QueueEntry second = waiting.stream()
-                .skip(1)
-                .filter(candidate -> candidate.getTimeControl().equals(first.getTimeControl()))
-                .findFirst()
-                .orElse(null);
-        if (second == null) {
-            return 0;
-        }
+        Map<String, Integer> ratings = ratingService.ratingsByUser(
+                waiting.stream().map(QueueEntry::getUserId).toList());
+        Instant now = Instant.now();
 
+        // Oldest first: whoever has waited longest gets first pick of the opponents their rating
+        // allows. If they have none, the next-longest wait is tried, so one stranded player does
+        // not hold up everyone queued behind them.
+        for (int i = 0; i < waiting.size(); i++) {
+            QueueEntry partner = bestPartner(waiting, i, ratings, now);
+            if (partner != null && pair(waiting.get(i), partner)) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    /** The rating-closest opponent within the first player's current tolerance, or null if none. */
+    private QueueEntry bestPartner(List<QueueEntry> waiting, int index, Map<String, Integer> ratings, Instant now) {
+        QueueEntry first = waiting.get(index);
+        long window = allowedRatingDelta(first.getQueuedAt(), now);
+        int firstRating = ratingOf(ratings, first.getUserId());
+
+        QueueEntry best = null;
+        int bestDelta = Integer.MAX_VALUE;
+        for (int j = 0; j < waiting.size(); j++) {
+            if (j == index) {
+                continue;
+            }
+            QueueEntry candidate = waiting.get(j);
+            if (!candidate.getTimeControl().equals(first.getTimeControl())) {
+                continue;
+            }
+            if (candidate.getUserId().equals(first.getUserId())) {
+                continue; // never pair a player with themselves
+            }
+            int delta = Math.abs(ratingOf(ratings, candidate.getUserId()) - firstRating);
+            if (delta > window) {
+                continue;
+            }
+            // Strictly closer, so a tie keeps the earliest-queued candidate (we scan in queue order).
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * How far apart two ratings may be and still be paired.
+     *
+     * <p>Widens the longer a player has waited, so two far-apart players are not stranded forever
+     * in a small pool: after a minute the window admits almost anyone. This is the fairness valve
+     * between "a good game now" and "any game soon".
+     */
+    long allowedRatingDelta(Instant queuedAt, Instant now) {
+        long waitedSeconds = Math.max(0L, Duration.between(queuedAt, now).getSeconds());
+        return ratingWindowBase + waitedSeconds * ratingWindowGrowthPerSecond;
+    }
+
+    private boolean pair(QueueEntry first, QueueEntry second) {
+        // Re-read under a row lock: the candidate list is only a hint, and the lock plus the status
+        // re-check is what stops two instances claiming the same player.
         QueueEntry left = queueRepository.findByIdForUpdate(first.getId()).orElse(null);
         QueueEntry right = queueRepository.findByIdForUpdate(second.getId()).orElse(null);
         if (left == null || right == null
                 || left.getStatus() != QueueStatus.QUEUED || right.getStatus() != QueueStatus.QUEUED) {
-            return 0; // another instance claimed one of them first
+            return false; // another instance claimed one of them first
         }
         if (left.getUserId().equals(right.getUserId())) {
-            return 0; // never pair a player with themselves
+            return false;
         }
 
         String matchId = UUID.randomUUID().toString();
@@ -182,7 +250,11 @@ public class MatchmakingService {
                         match.getMatchedAt()));
 
         log.info("matched {} vs {} as game {}", white.getUserId(), black.getUserId(), gameId);
-        return 1;
+        return true;
+    }
+
+    private static int ratingOf(Map<String, Integer> ratings, String userId) {
+        return ratings.getOrDefault(userId, Elo.DEFAULT_RATING);
     }
 
     private QueueStatusDto toDto(QueueEntry entry) {

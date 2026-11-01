@@ -36,6 +36,12 @@ spring:
           uri: ${ccmmd.services.matchmaking-service}
           predicates:
             - Path=/api/matchmaking/**
+        # Ratings are owned by matchmaking-service (it pairs on them); they get their own path so
+        # the API reads as "ratings", not "matchmaking".
+        - id: matchmaking-service-ratings
+          uri: ${ccmmd.services.matchmaking-service}
+          predicates:
+            - Path=/api/ratings/**
         - id: presence-service
           uri: ${ccmmd.services.presence-service}
           predicates:

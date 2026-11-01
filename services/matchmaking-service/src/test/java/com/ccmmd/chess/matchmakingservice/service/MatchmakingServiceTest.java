@@ -2,9 +2,11 @@ package com.ccmmd.chess.matchmakingservice.service;
 
 import com.ccmmd.chess.matchmakingservice.domain.QueueEntry;
 import com.ccmmd.chess.matchmakingservice.domain.QueueStatus;
+import com.ccmmd.chess.matchmakingservice.domain.Rating;
 import com.ccmmd.chess.matchmakingservice.dto.MatchmakingStatusDto;
 import com.ccmmd.chess.matchmakingservice.repository.MatchRepository;
 import com.ccmmd.chess.matchmakingservice.repository.QueueRepository;
+import com.ccmmd.chess.matchmakingservice.repository.RatingRepository;
 import com.ccmmd.chess.platform.events.EventType;
 import com.ccmmd.chess.platform.messaging.OutboxEntry;
 import com.ccmmd.chess.platform.messaging.OutboxRepository;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +43,9 @@ class MatchmakingServiceTest {
 
     @Autowired
     private OutboxRepository outbox;
+
+    @Autowired
+    private RatingRepository ratingRepository;
 
     /** Account ids are UUIDs (36 chars), which is what the column is sized for. */
     private static String user() {
@@ -157,5 +163,37 @@ class MatchmakingServiceTest {
     void anonymousCannotQueue() {
         assertThatThrownBy(() -> matchmaking.enqueue(null, "Nobody", null))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("the two closest-rated players are paired; a far stronger one is left queued")
+    void pairsTheClosestRatings() {
+        String first = user();
+        String second = user();
+        String farStronger = user();
+        ratingRepository.saveAndFlush(new Rating(first, 1500));
+        ratingRepository.saveAndFlush(new Rating(second, 1500));
+        ratingRepository.saveAndFlush(new Rating(farStronger, 2000));
+
+        matchmaking.enqueue(first, "First", "BLITZ");
+        matchmaking.enqueue(second, "Second", "BLITZ");
+        matchmaking.enqueue(farStronger, "Far", "BLITZ");
+
+        assertThat(matchmaking.pairOnce()).isEqualTo(1);
+
+        assertThat(matchmaking.status(first).matched()).isTrue();
+        assertThat(matchmaking.status(second).matched()).isTrue();
+        assertThat(matchmaking.status(farStronger).queued()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the rating window widens the longer a player waits, so a small pool still pairs")
+    void ratingWindowWidensWithWait() {
+        Instant now = Instant.now();
+
+        long fresh = matchmaking.allowedRatingDelta(now, now);
+        long afterAMinute = matchmaking.allowedRatingDelta(now.minusSeconds(60), now);
+
+        assertThat(afterAMinute).isGreaterThan(fresh);
     }
 }
