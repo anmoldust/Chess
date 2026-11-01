@@ -40,3 +40,12 @@ ccmmd:
   services:
     game-service: ${CCMMD_GAME_SERVICE_URL:http://localhost:8082}
     timeout: PT5S
+  engine:
+    # A UCI engine executable, optionally with arguments. Blank => the material-heuristic fallback
+    # (the report then says engineBacked=false). Point it at Stockfish for a real evaluation:
+    #   CCMMD_ENGINE_BINARY=C:\tools\stockfish\stockfish.exe
+    binary: ${CCMMD_ENGINE_BINARY:}
+    startup-timeout-ms: 15000
+    eval-timeout-ms: 15000
+    # Fast pass: one evaluation per move. Raise for a sharper review at the cost of latency.
+    depth: 12

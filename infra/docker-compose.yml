@@ -208,7 +208,10 @@ services:
     <<: *service-defaults
     build:
       context: ..
-      dockerfile: infra/service.Dockerfile
+      # Its own Dockerfile, because engine-backed analysis needs Stockfish in the image too. That
+      # image is Ubuntu-based (the Linux binary needs glibc, not Alpine's musl) and sets
+      # CCMMD_ENGINE_BINARY=stockfish, which is exactly what this service reads to evaluate moves.
+      dockerfile: infra/engine.Dockerfile
       args: { MODULE: services/analysis-service }
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq

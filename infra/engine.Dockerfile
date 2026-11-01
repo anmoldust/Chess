@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# engine-service, with a real Stockfish baked in.
+# A Stockfish-baked image for any service that drives a UCI engine: engine-service (which plays the
+# computer's moves) and analysis-service (which evaluates a finished game). Both read the binary
+# from CCMMD_ENGINE_BINARY, set below.
 #
 # This one cannot use the shared service Dockerfile: the official Linux binary is linked against
 # glibc, and the shared runtime image is Alpine (musl) — the binary would not execute. So this
