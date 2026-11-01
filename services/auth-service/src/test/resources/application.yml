@@ -35,6 +35,10 @@ ccmmd:
       # Tests sign in many times from one context; the limiter has its own unit test.
       max-attempts: 1000
       window: PT5M
+    reset:
+      # The test needs the raw token to exercise redemption; production never sets this.
+      expose-token: true
+      ttl: PT30M
   messaging:
     outbox:
       # `fixedDelay` fires once immediately at startup and only then waits, so delaying the

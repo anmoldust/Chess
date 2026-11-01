@@ -1,7 +1,10 @@
 package com.ccmmd.chess.gateway.auth;
 
+import com.ccmmd.chess.gateway.dto.ForgotPasswordRequest;
 import com.ccmmd.chess.gateway.dto.LoginRequest;
+import com.ccmmd.chess.gateway.dto.PasswordResetResponse;
 import com.ccmmd.chess.gateway.dto.RegisterRequest;
+import com.ccmmd.chess.gateway.dto.ResetPasswordRequest;
 import com.ccmmd.chess.gateway.dto.TokenResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
@@ -31,11 +34,11 @@ public class AuthServiceClient {
     }
 
     public Mono<TokenResponse> register(RegisterRequest request) {
-        return post("/api/auth/register", request, false);
+        return post("/api/auth/register", request, TokenResponse.class, false);
     }
 
     public Mono<TokenResponse> login(LoginRequest request) {
-        return post("/api/auth/login", request, false);
+        return post("/api/auth/login", request, TokenResponse.class, false);
     }
 
     /**
@@ -43,10 +46,20 @@ public class AuthServiceClient {
      * the internal service token: the caller is the gateway, not the user.
      */
     public Mono<TokenResponse> refreshFor(String userId) {
-        return post("/api/auth/refresh", Map.of("userId", userId), true);
+        return post("/api/auth/refresh", Map.of("userId", userId), TokenResponse.class, true);
     }
 
-    private Mono<TokenResponse> post(String path, Object body, boolean internal) {
+    /** Starts a password reset. The caller is anonymous by definition. */
+    public Mono<PasswordResetResponse> forgotPassword(ForgotPasswordRequest request) {
+        return post("/api/auth/password/forgot", request, PasswordResetResponse.class, false);
+    }
+
+    /** Redeems a reset token for a new password. Returns nothing on success (204). */
+    public Mono<Void> resetPassword(ResetPasswordRequest request) {
+        return post("/api/auth/password/reset", request, Void.class, false);
+    }
+
+    private <T> Mono<T> post(String path, Object body, Class<T> responseType, boolean internal) {
         WebClient.RequestBodySpec spec = webClient.post()
                 .uri(path)
                 .contentType(MediaType.APPLICATION_JSON);
@@ -62,7 +75,7 @@ public class AuthServiceClient {
                         .defaultIfEmpty(new ProblemBody(null, null))
                         .flatMap(problem -> Mono.error(
                                 new DownstreamProblem(response.statusCode(), problem.title(), problem.detail()))))
-                .bodyToMono(TokenResponse.class);
+                .bodyToMono(responseType);
     }
 
     private record ProblemBody(String title, String detail) {

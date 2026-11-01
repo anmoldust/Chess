@@ -42,3 +42,10 @@ ccmmd:
       # the attempts, so a shared counter belongs in Redis when this is scaled out.
       max-attempts: ${CCMMD_LOGIN_MAX_ATTEMPTS:5}
       window: ${CCMMD_LOGIN_WINDOW:PT5M}
+    reset:
+      ttl: ${CCMMD_RESET_TTL:PT30M}
+      # Where the emailed link points: the SPA reads ?token= out of the hash and opens the reset form.
+      base-url: ${CCMMD_RESET_BASE_URL:http://localhost:3000/#/reset}
+      # Development only. With this on, the endpoint echoes the token so the flow is usable without
+      # an email provider. Never enable it in production.
+      expose-token: ${CCMMD_RESET_EXPOSE_TOKEN:false}

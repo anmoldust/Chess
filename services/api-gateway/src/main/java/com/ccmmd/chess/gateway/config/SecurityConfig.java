@@ -46,6 +46,9 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/me",
+                                // A user who forgot their password is signed out by definition.
+                                "/api/auth/password/forgot",
+                                "/api/auth/password/reset",
                                 "/actuator/health",
                                 "/actuator/health/**",
                                 "/actuator/info",

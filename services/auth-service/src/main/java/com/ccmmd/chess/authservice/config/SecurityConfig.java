@@ -41,6 +41,9 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/refresh",
+                                // Reset is used by signed-out users by definition.
+                                "/api/auth/password/forgot",
+                                "/api/auth/password/reset",
                                 "/.well-known/jwks.json",
                                 "/actuator/health",
                                 "/actuator/health/**",

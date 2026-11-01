@@ -4,8 +4,11 @@ import com.ccmmd.chess.gateway.auth.AuthServiceClient;
 import com.ccmmd.chess.gateway.auth.SessionKeys;
 import com.ccmmd.chess.gateway.auth.SessionUser;
 import com.ccmmd.chess.gateway.dto.AuthStatus;
+import com.ccmmd.chess.gateway.dto.ForgotPasswordRequest;
 import com.ccmmd.chess.gateway.dto.LoginRequest;
+import com.ccmmd.chess.gateway.dto.PasswordResetResponse;
 import com.ccmmd.chess.gateway.dto.RegisterRequest;
+import com.ccmmd.chess.gateway.dto.ResetPasswordRequest;
 import com.ccmmd.chess.gateway.dto.TokenResponse;
 import com.ccmmd.chess.gateway.dto.UserDto;
 import jakarta.validation.Valid;
@@ -81,6 +84,19 @@ public class GatewayAuthController {
         return exchange.getSession()
                 .flatMap(session -> session.invalidate())
                 .thenReturn(ResponseEntity.noContent().build());
+    }
+
+    /** Starts a password reset. Always 202, so it cannot be used to discover registered accounts. */
+    @PostMapping("/password/forgot")
+    public Mono<ResponseEntity<PasswordResetResponse>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        return authServiceClient.forgotPassword(request)
+                .map(response -> ResponseEntity.accepted().body(response));
+    }
+
+    @PostMapping("/password/reset")
+    public Mono<ResponseEntity<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return authServiceClient.resetPassword(request).thenReturn(ResponseEntity.noContent().build());
     }
 
     private Mono<TokenResponse> establishSession(ServerWebExchange exchange, TokenResponse tokens) {

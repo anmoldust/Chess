@@ -55,6 +55,11 @@ public class User {
         return passwordHash;
     }
 
+    /** Replaces the stored password hash; used by password reset. */
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

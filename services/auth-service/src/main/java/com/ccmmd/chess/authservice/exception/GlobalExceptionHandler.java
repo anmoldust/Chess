@@ -26,6 +26,11 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.TOO_MANY_REQUESTS, "Too many attempts", ex.getMessage());
     }
 
+    @ExceptionHandler(InvalidResetTokenException.class)
+    ProblemDetail handleInvalidResetToken(InvalidResetTokenException ex) {
+        return problem(HttpStatus.BAD_REQUEST, "Invalid reset link", ex.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         return problem(HttpStatus.BAD_REQUEST, "Invalid request", ex.getMessage());
