@@ -10,9 +10,10 @@ it changed how verification is done in this repo.
 > `engine started: Stockfish 19`. Outside Docker, point `CCMMD_ENGINE_BINARY` at any UCI engine;
 > with it unset the service falls back to a random legal move and says so in its name.
 >
-> **Analysis is still heuristic.** `analysis-service` does not use Stockfish: it reports material
-> swings (`engineBacked=false`), because evaluating positions needs an engine in that service too.
-> Swapping it in means replacing `AnalysisCalculator`.
+> **Analysis is engine-backed.** `analysis-service` drives Stockfish over UCI (the same binary the
+> engine image bakes in) and reports centipawn-loss per move, so `engineBacked=true` and quiet
+> positional mistakes count. With no engine configured it falls back to the earlier material
+> heuristic and says so (`engineBacked=false`). See `docs/api-contract.md`.
 
 Plan of record: `~/.commandcode/plans/microservices-split.md`
 
@@ -200,6 +201,11 @@ regression net. Future "findings" from a hand-rolled script deserve the same sce
    JWT for downstream services. Services stay stateless and validate JWTs only.
 7. **Platform JPA entities are per-service, not shared tables.** Each service's Flyway
    migrations create `outbox` and `processed_event` in its *own* database.
+8. **Password reset ships without an email provider.** Tokens are real (hashed, single-use,
+   expiring) and the flow is complete, but delivery goes through `ResetNotifier`; today that
+   logs the link rather than emailing it. Picking a mail provider is the only missing piece —
+   replace `LoggingResetNotifier` and nothing else changes. `ccmmd.auth.reset.expose-token` echoes
+   the token in the response so the flow is usable locally.
 
 ---
 
@@ -248,9 +254,9 @@ gateway on http://localhost:8080.
 2. **Wire the frontend to the four new services** — matchmaking, presence, notifications and
    analysis are API-complete and reachable through the gateway, but no UI calls them yet. This is
    the largest remaining gap between "nine working services" and "an app someone would use".
-3. Add real engine-backed analysis. The current report is a material heuristic and says so
-   (`engineBacked=false`); swapping in a UCI engine means replacing `AnalysisCalculator`, not the
-   pipeline around it.
+3. Add real engine-backed analysis. **Done:** `analysis-service` evaluates each move with Stockfish
+   over UCI and reports centipawn loss; a depth knob (`ccmmd.engine.depth`) trades sharpness for
+   latency, and the material heuristic remains only as the no-engine fallback.
 4. **Put this repo under git.** Still the cheapest way to lose all of it.
 
 `infra/tools/` holds five dev aids: `stub-downstream.ps1` (records inbound headers),
