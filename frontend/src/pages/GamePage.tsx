@@ -330,6 +330,23 @@ export function GamePage({ gameId }: { gameId: string }) {
       .catch((e) => setError(errorMessage(e)));
   };
 
+  // Takebacks go over REST like draws: the server broadcasts the new state to both clients.
+  const offerOrAcceptTakeback = () => {
+    setError(null);
+    api
+      .requestTakeback(gameId)
+      .then(setGame)
+      .catch((e) => setError(errorMessage(e)));
+  };
+
+  const declineTakeback = () => {
+    setError(null);
+    api
+      .declineTakeback(gameId)
+      .then(setGame)
+      .catch((e) => setError(errorMessage(e)));
+  };
+
   const offerOrAcceptRematch = () => {
     setError(null);
     api
@@ -419,6 +436,26 @@ export function GamePage({ gameId }: { gameId: string }) {
             )}
             {started && myColor !== null && game.drawOfferBy === myColor && (
               <span className="muted small">Draw offered — waiting for your opponent…</span>
+            )}
+            {started && myColor !== null && !isAi && game.moves.length > 0 && game.takebackOfferBy === null && (
+              <button className="secondary" onClick={offerOrAcceptTakeback}>
+                Take back
+              </button>
+            )}
+            {started &&
+              myColor !== null &&
+              !isAi &&
+              game.takebackOfferBy !== null &&
+              game.takebackOfferBy !== myColor && (
+                <>
+                  <button onClick={offerOrAcceptTakeback}>Accept takeback</button>
+                  <button className="secondary" onClick={declineTakeback}>
+                    No takeback
+                  </button>
+                </>
+              )}
+            {started && myColor !== null && game.takebackOfferBy === myColor && (
+              <span className="muted small">Takeback requested — waiting for your opponent…</span>
             )}
             {gameOver && myColor !== null && !isAi && game.rematchOfferBy === null && (
               <button onClick={offerOrAcceptRematch}>Rematch</button>

@@ -402,6 +402,75 @@ public class GameService {
     }
 
     /**
+     * Asks to take back the last move — or accepts such a request. As with draws, offering back is
+     * the acceptance: one verb, one button, no way to half-accept twice.
+     *
+     * <p>Only a live game between two humans. Taking back the move that <em>ended</em> a game would
+     * mean unwinding the end-of-game fan-out (the opponent, notifications, ratings and analysis have
+     * all been told), so that is deliberately out of scope; and the computer cannot agree to
+     * anything.
+     */
+    @Transactional
+    public GameDto takeback(String id, String userId) {
+        requireSignedIn(userId, "request a takeback");
+
+        Game game = require(id);
+        PlayerColor seat = seatedColor(game, userId);
+        if (game.getMode() != GameMode.HUMAN_VS_HUMAN) {
+            throw new GameConflictException("A move against the computer cannot be taken back");
+        }
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
+            throw new GameConflictException("A takeback only applies to a game in progress");
+        }
+        if (game.getMoves().isEmpty()) {
+            throw new GameConflictException("There is no move to take back yet");
+        }
+
+        PlayerColor open = game.getTakebackOfferBy();
+        if (open != null && open != seat) {
+            return undoLastMove(game);
+        }
+        if (open == seat) {
+            return GameMapper.toDto(game); // already asked; idempotent
+        }
+
+        game.offerTakeback(seat);
+        return GameMapper.toDto(repository.saveAndFlush(game));
+    }
+
+    @Transactional
+    public GameDto declineTakeback(String id, String userId) {
+        requireSignedIn(userId, "decline a takeback");
+
+        Game game = require(id);
+        PlayerColor seat = seatedColor(game, userId);
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
+            throw new GameConflictException("Game " + id + " is not in progress");
+        }
+
+        // Only the opponent can decline; declining your own request is meaningless.
+        if (game.getTakebackOfferBy() != null && game.getTakebackOfferBy() != seat) {
+            game.clearTakebackOffer();
+            return GameMapper.toDto(repository.saveAndFlush(game));
+        }
+        return GameMapper.toDto(game);
+    }
+
+    /** Undoes the last move — position, move list and clock — and clears the offer. */
+    private GameDto undoLastMove(Game game) {
+        MoveRecord removed = game.removeLastMove();
+        List<MoveRecord> remaining = game.getMoves();
+        game.setFen(remaining.isEmpty() ? ChessRules.START_FEN : remaining.get(remaining.size() - 1).getFenAfter());
+        // After the undo it is the undone move's owner's turn again; that is whose clock restarts.
+        game.refundIncrement(ChessRules.turnOf(game.getFen()), Instant.now());
+        game.clearTakebackOffer();
+
+        Game saved = repository.saveAndFlush(game);
+        log.info("took back {} in game {}", removed == null ? "a move" : removed.getUci(), saved.getId());
+        return GameMapper.toDto(saved);
+    }
+
+    /**
      * Ends games whose clock has run out while nobody was moving.
      *
      * <p>Server-side on purpose: the client cannot be trusted to report its own flag fall, and a

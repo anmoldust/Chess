@@ -149,6 +149,15 @@ export const api = {
     return request<GameDto>(`/games/${id}/draw/decline`, { method: 'POST' });
   },
 
+  /** Requests a takeback of the last move, or accepts the opponent's open request. */
+  requestTakeback(id: string): Promise<GameDto> {
+    return request<GameDto>(`/games/${id}/takeback`, { method: 'POST' });
+  },
+
+  declineTakeback(id: string): Promise<GameDto> {
+    return request<GameDto>(`/games/${id}/takeback/decline`, { method: 'POST' });
+  },
+
   /** Offers a rematch, or accepts the opponent's open offer. */
   requestRematch(id: string): Promise<GameDto> {
     return request<GameDto>(`/games/${id}/rematch`, { method: 'POST' });

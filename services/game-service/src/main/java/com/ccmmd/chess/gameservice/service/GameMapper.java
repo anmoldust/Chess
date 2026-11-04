@@ -52,6 +52,7 @@ public final class GameMapper {
                 resultOf(game.getStatus()),
                 game.getEndReason(),
                 game.getDrawOfferBy(),
+                game.getTakebackOfferBy(),
                 game.getRematchOfferBy(),
                 game.getRematchGameId(),
                 game.hasClock() ? game.remainingMs(PlayerColor.WHITE) : null,

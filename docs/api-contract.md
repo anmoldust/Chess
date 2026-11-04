@@ -124,13 +124,18 @@ awaiting that side / concurrent write.
 | `POST /api/games/{id}/resign` | The seated player resigns; the opponent wins |
 | `POST /api/games/{id}/draw` | Offers a draw, or accepts the opponent's open offer |
 | `POST /api/games/{id}/draw/decline` | Declines the open offer; play continues |
+| `POST /api/games/{id}/takeback` | Asks to take back the last move, or accepts the opponent's request |
+| `POST /api/games/{id}/takeback/decline` | Declines the open request; the move stands |
 | `POST /api/games/{id}/rematch` | Offers a rematch, or accepts the opponent's open offer |
 
-Draw and rematch offers both travel in the game DTO (`drawOfferBy`, `rematchOfferBy`), so both
-clients see them on the next broadcast without a separate channel. Offering back is the acceptance
-— one verb, one button, no way to half-accept twice. When a rematch is agreed, the finished game's
-DTO carries `rematchGameId`; both clients open that game, which starts with the colours swapped and
-the same clock. Rematch is offered between two humans only.
+Draw, takeback and rematch offers all travel in the game DTO (`drawOfferBy`, `takebackOfferBy`,
+`rematchOfferBy`), so both clients see them on the next broadcast without a separate channel.
+Offering back is the acceptance — one verb, one button, no way to half-accept twice. An accepted
+takeback undoes the last move (the position, the move list, and the increment that move added), and
+is offered only in a live game between two humans — taking back the move that ended a game would
+mean unwinding the end-of-game fan-out. When a rematch is agreed, the finished game's DTO carries
+`rematchGameId`; both clients open that game, which starts with the colours swapped and the same
+clock. Rematch is offered between two humans only.
 
 ## WebSocket (STOMP over SockJS)
 

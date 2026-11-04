@@ -32,6 +32,8 @@ public record GameDto(
         GameEndReason endReason,
         /** The side with an open draw offer, or null. The opponent accepts by offering back. */
         PlayerColor drawOfferBy,
+        /** The side with an open takeback request, or null. The opponent accepts by asking too. */
+        PlayerColor takebackOfferBy,
         /** The side with an open rematch offer, or null. Both sides offering starts a new game. */
         PlayerColor rematchOfferBy,
         /** Set once a rematch is agreed: the id of the new game both clients should open. */

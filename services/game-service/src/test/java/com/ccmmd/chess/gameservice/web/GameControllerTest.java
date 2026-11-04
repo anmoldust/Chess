@@ -142,4 +142,29 @@ class GameControllerTest {
         verify(publisher, atLeastOnce()).gameUpdated(sent.capture());
         assertThat(sent.getAllValues()).anyMatch(game -> game.drawOfferBy() != null);
     }
+
+    @Test
+    @DisplayName("a takeback request is broadcast, and accepting it undoes the move")
+    void takebackIsBroadcastAndUndoes() throws Exception {
+        String id = createGame("user-white", "HUMAN_VS_HUMAN");
+        mockMvc.perform(post("/api/games/" + id + "/join").with(asUser("user-black", "Black")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/games/" + id + "/move")
+                        .with(asUser("user-white", "White"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":\"e2\",\"to\":\"e4\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/games/" + id + "/takeback").with(asUser("user-white", "White")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.takebackOfferBy").value("WHITE"));
+
+        ArgumentCaptor<GameDto> sent = ArgumentCaptor.forClass(GameDto.class);
+        verify(publisher, atLeastOnce()).gameUpdated(sent.capture());
+        assertThat(sent.getAllValues()).anyMatch(game -> game.takebackOfferBy() != null);
+
+        mockMvc.perform(post("/api/games/" + id + "/takeback").with(asUser("user-black", "Black")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.moves").isEmpty());
+    }
 }

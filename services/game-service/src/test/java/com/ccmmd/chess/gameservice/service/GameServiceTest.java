@@ -546,6 +546,112 @@ class GameServiceTest {
     }
 
     @Test
+    @DisplayName("a takeback request is visible to both players before anyone accepts")
+    void takebackRequestIsVisible() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+
+        GameDto asked = gameService.takeback(game.id(), RAJAT);
+
+        assertThat(asked.takebackOfferBy()).isEqualTo(PlayerColor.WHITE);
+        assertThat(asked.moves()).hasSize(1);
+        assertThat(gameService.getGame(game.id()).takebackOfferBy()).isEqualTo(PlayerColor.WHITE);
+    }
+
+    @Test
+    @DisplayName("asking back undoes the last move — position, move list and offer")
+    void takebackUndoesTheLastMove() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+        gameService.takeback(game.id(), RAJAT);
+
+        GameDto undone = gameService.takeback(game.id(), SAM);
+
+        assertThat(undone.moves()).isEmpty();
+        assertThat(undone.fen()).isEqualTo(ChessRules.START_FEN);
+        assertThat(undone.turn()).isEqualTo(PlayerColor.WHITE);
+        assertThat(undone.takebackOfferBy()).isNull();
+        assertThat(undone.status()).isEqualTo(GameStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("a takeback removes exactly the increment the move added to the clock")
+    void takebackRefundsTheIncrement() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        GameDto afterMove = gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+        gameService.takeback(game.id(), RAJAT);
+
+        GameDto undone = gameService.takeback(game.id(), SAM);
+
+        // BLITZ is 5+2, so the move added the 2s increment and the takeback takes it straight off.
+        assertThat(afterMove.whiteTimeMs() - undone.whiteTimeMs()).isEqualTo(2_000L);
+    }
+
+    @Test
+    @DisplayName("asking back twice does not undo your own move")
+    void askingTwiceDoesNotUndo() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+        gameService.takeback(game.id(), RAJAT);
+
+        GameDto again = gameService.takeback(game.id(), RAJAT);
+
+        assertThat(again.moves()).hasSize(1);
+        assertThat(again.takebackOfferBy()).isEqualTo(PlayerColor.WHITE);
+    }
+
+    @Test
+    @DisplayName("declining a takeback keeps the move")
+    void decliningKeepsTheMove() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+        gameService.takeback(game.id(), RAJAT);
+
+        GameDto declined = gameService.declineTakeback(game.id(), SAM);
+
+        assertThat(declined.takebackOfferBy()).isNull();
+        assertThat(declined.moves()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a spectator cannot request a takeback")
+    void spectatorCannotRequestATakeback() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.makeMove(game.id(), new MoveRequest("e2", "e4", null), RAJAT);
+
+        assertThatThrownBy(() -> gameService.takeback(game.id(), ALEX))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("there is nothing to take back before the first move")
+    void cannotTakeBackBeforeAnyMove() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+
+        assertThatThrownBy(() -> gameService.takeback(game.id(), SAM))
+                .isInstanceOf(GameConflictException.class);
+    }
+
+    @Test
+    @DisplayName("a finished game cannot be taken back")
+    void cannotTakeBackAfterTheGameEnds() {
+        GameDto game = gameService.joinGame(newHumanGame(RAJAT, "rajat").id(), SAM, "sam");
+        gameService.resign(game.id(), SAM);
+
+        assertThatThrownBy(() -> gameService.takeback(game.id(), RAJAT))
+                .isInstanceOf(GameConflictException.class);
+    }
+
+    @Test
+    @DisplayName("a game against the computer cannot be taken back")
+    void cannotTakeBackAnAiGame() {
+        GameDto game = newAiGame(RAJAT, "rajat", PlayerColor.WHITE);
+
+        assertThatThrownBy(() -> gameService.takeback(game.id(), RAJAT))
+                .isInstanceOf(GameConflictException.class);
+    }
+
+    @Test
     @DisplayName("a game is created with the time control it was asked for")
     void createHonoursTimeControl() {
         GameDto rapid = gameService.createGame(

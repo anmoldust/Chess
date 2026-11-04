@@ -73,6 +73,8 @@ export interface GameDto {
   endReason: GameEndReason | null;
   /** The side with an open draw offer. The opponent accepts by offering back. */
   drawOfferBy: PlayerColor | null;
+  /** The side with an open takeback request. The opponent accepts by asking too. */
+  takebackOfferBy: PlayerColor | null;
   /** The side with an open rematch offer, or null. Both sides offering starts a new game. */
   rematchOfferBy: PlayerColor | null;
   /** Set once a rematch is agreed: the new game both clients should open. */

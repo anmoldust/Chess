@@ -105,6 +105,17 @@ public class GameController {
         return broadcast(gameService.rematch(id, JwtPrincipals.userId(authentication)));
     }
 
+    /** Requests a takeback of the last move, or accepts the opponent's open request. */
+    @PostMapping("/{id}/takeback")
+    public GameDto takeback(@PathVariable String id, Authentication authentication) {
+        return broadcast(gameService.takeback(id, JwtPrincipals.userId(authentication)));
+    }
+
+    @PostMapping("/{id}/takeback/decline")
+    public GameDto declineTakeback(@PathVariable String id, Authentication authentication) {
+        return broadcast(gameService.declineTakeback(id, JwtPrincipals.userId(authentication)));
+    }
+
     /** Publishes the new state to the game's topic, then returns it. */
     private GameDto broadcast(GameDto game) {
         publisher.gameUpdated(game);

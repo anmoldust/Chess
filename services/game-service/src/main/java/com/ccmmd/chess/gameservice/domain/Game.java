@@ -96,6 +96,11 @@ public class Game {
     @Column(name = "rematch_game_id", length = 36)
     private String rematchGameId;
 
+    /** Which side has asked to take back the last move, or null. Cleared when accepted or declined. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "takeback_offer_by", length = 8)
+    private PlayerColor takebackOfferBy;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "game_moves", joinColumns = @JoinColumn(name = "game_id"))
     @OrderColumn(name = "move_index")
@@ -264,6 +269,48 @@ public class Game {
 
     public void setRematchGameId(String rematchGameId) {
         this.rematchGameId = rematchGameId;
+        touch();
+    }
+
+    public PlayerColor getTakebackOfferBy() {
+        return takebackOfferBy;
+    }
+
+    public void offerTakeback(PlayerColor color) {
+        this.takebackOfferBy = color;
+        touch();
+    }
+
+    public void clearTakebackOffer() {
+        this.takebackOfferBy = null;
+        touch();
+    }
+
+    /** Drops the last move from the audit trail; the caller realigns {@link #fen} to match. */
+    public MoveRecord removeLastMove() {
+        if (moves.isEmpty()) {
+            return null;
+        }
+        MoveRecord removed = moves.remove(moves.size() - 1);
+        touch();
+        return removed;
+    }
+
+    /**
+     * Restores the mover's clock after their last move is undone. The move had added the increment,
+     * so take it back off and restart the clock as it was before the move — time already spent
+     * thinking is given back, which is the usual takeback behaviour.
+     */
+    public void refundIncrement(PlayerColor mover, Instant now) {
+        if (!hasClock()) {
+            return;
+        }
+        if (mover == PlayerColor.WHITE) {
+            this.whiteTimeMs = Math.max(0L, whiteTimeMs - incrementMs);
+        } else {
+            this.blackTimeMs = Math.max(0L, blackTimeMs - incrementMs);
+        }
+        this.clockStartedAt = now;
         touch();
     }
 
