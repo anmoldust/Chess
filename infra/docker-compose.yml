@@ -66,6 +66,15 @@ services:
       retries: 20
     networks: [chess]
 
+  # Catches reset emails locally and shows them at http://localhost:8025. Development only: a real
+  # deployment points SPRING_MAIL_HOST at an SMTP relay and this service is left out.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # web UI and API
+      - "1025:1025"   # SMTP
+    networks: [chess]
+
   auth-service:
     <<: *service-defaults
     build:
@@ -79,10 +88,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_db
       SPRING_DATASOURCE_USERNAME: auth_svc
       SPRING_DATASOURCE_PASSWORD: auth_svc
+      # Setting a mail host is what makes reset links go out by email rather than to the log.
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
+      CCMMD_RESET_MAIL_FROM: ${CCMMD_RESET_MAIL_FROM:-no-reply@ccmmd.local}
       CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN:-dev-internal-token-change-me}
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      mailpit: { condition: service_started }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 5s

@@ -46,6 +46,16 @@ ccmmd:
       ttl: ${CCMMD_RESET_TTL:PT30M}
       # Where the emailed link points: the SPA reads ?token= out of the hash and opens the reset form.
       base-url: ${CCMMD_RESET_BASE_URL:http://localhost:3000/#/reset}
+      # The From: address on the reset email (used only when mail is configured — see below).
+      mail-from: ${CCMMD_RESET_MAIL_FROM:no-reply@ccmmd.local}
       # Development only. With this on, the endpoint echoes the token so the flow is usable without
-      # an email provider. Never enable it in production.
+      # reading the inbox. Never enable it in production.
       expose-token: ${CCMMD_RESET_EXPOSE_TOKEN:false}
+
+# Set spring.mail.host (e.g. SPRING_MAIL_HOST=mailpit in docker compose, or any SMTP relay) to
+# deliver reset links by email; leave it unset and the link is written to the log instead. See
+# ResetNotifierConfig.
+#   spring:
+#     mail:
+#       host: localhost
+#       port: 1025

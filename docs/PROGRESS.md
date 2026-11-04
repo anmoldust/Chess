@@ -201,11 +201,13 @@ regression net. Future "findings" from a hand-rolled script deserve the same sce
    JWT for downstream services. Services stay stateless and validate JWTs only.
 7. **Platform JPA entities are per-service, not shared tables.** Each service's Flyway
    migrations create `outbox` and `processed_event` in its *own* database.
-8. **Password reset ships without an email provider.** Tokens are real (hashed, single-use,
-   expiring) and the flow is complete, but delivery goes through `ResetNotifier`; today that
-   logs the link rather than emailing it. Picking a mail provider is the only missing piece —
-   replace `LoggingResetNotifier` and nothing else changes. `ccmmd.auth.reset.expose-token` echoes
-   the token in the response so the flow is usable locally.
+8. **Password reset delivers by email when a mail server is configured.** Tokens are real
+   (hashed, single-use, expiring). Delivery goes through `ResetNotifier`: with `spring.mail.host`
+   set (Mailpit in `docker compose`, or any SMTP relay in production) `SmtpResetNotifier` emails
+   the link; with it unset `LoggingResetNotifier` logs the link so the flow still works locally. A
+   mail outage is logged rather than surfaced, so the endpoint keeps answering identically for
+   known and unknown addresses. `ccmmd.auth.reset.expose-token` can echo the token in the response
+   for local use.
 
 ---
 
