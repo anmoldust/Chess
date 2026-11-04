@@ -1,51 +1,84 @@
 # CCMMD — Chess Platform
 
-A production-shaped chess platform.
+A production-shaped, event-driven chess platform: a **React + TypeScript** SPA in front of
+**eight Spring Boot services**, communicating over **RabbitMQ**, with **one Postgres database per
+service**, **Redis**, and **Stockfish** for the computer opponent and post-game analysis.
 
-- **Frontend:** React 18 + TypeScript (Vite), `react-chessboard`, `chess.js`
-- **Backend:** Java 21 + Spring Boot 3, server-authoritative rules via
-  [chesslib](https://github.com/bhlangonijr/chesslib), REST + STOMP WebSocket
-- **Multiplayer:** real-time games over WebSocket; server validates every move
-- **AI:** Stockfish (WASM) runs client-side for local play and analysis
+| Piece | What it is |
+| --- | --- |
+| `frontend/` | Vite + React SPA — board, lobby, matchmaking, ratings, notifications, analysis |
+| `services/api-gateway` | The only browser-facing edge: session (Redis), CSRF, rate limiting, routing; mints a short-lived internal JWT |
+| `services/auth-service` | Accounts, credentials, password reset; the only component that mints tokens |
+| `services/game-service` | Authoritative rules, moves, clocks, draw/rematch; its own Postgres |
+| `services/engine-service` | Drives Stockfish over UCI to play the computer's moves |
+| `services/matchmaking-service` | Pairing and Elo ratings |
+| `services/presence-service` | Online / in-game presence (Redis TTL) |
+| `services/notification-service` | Per-account notifications, fanned out from events |
+| `services/analysis-service` | Post-game analysis — centipawn loss per move, via Stockfish |
+| `platform/` | Shared libraries: events, AMQP, security (JWT), messaging (outbox + idempotency) |
+| `infra/` | Docker Compose, the service/engine/SPA Dockerfiles, nginx, Postgres bootstrap |
 
-## Quick start
+## Run it
 
-Two terminals.
-
-**1. Backend** (http://localhost:8080)
+One command brings up the whole stack — Postgres, RabbitMQ, Redis, Mailpit, the eight services and
+the SPA:
 
 ```bash
-cd backend
-mvn spring-boot:run
+docker compose -f infra/docker-compose.yml up -d --build
 ```
 
-**2. Frontend** (http://localhost:5173)
+Then open:
+
+- **SPA** — http://localhost:3000
+- **gateway** — http://localhost:8080
+- **Mailpit** (catches password-reset emails) — http://localhost:8025
+
+End-to-end acceptance check (register → matchmake → play to mate → notifications + analysis):
 
 ```bash
-cd frontend
+powershell -File scripts/e2e.ps1
+```
+
+## Develop
+
+**Backend** — Java 21, Maven, one reactor from the repository root:
+
+```bash
+mvn test                                     # every module
+mvn -B spring-boot:run -pl services/game-service
+```
+
+The `api-gateway` and `presence-service` suites exercise a real Redis, so `mvn test` is only fully
+green with Redis running (`docker compose -f infra/docker-compose.yml up -d redis`, or the whole
+stack). Every other suite uses H2 and needs nothing.
+
+**Frontend** — from `frontend/`:
+
+```bash
 npm install
-npm run dev
+npm run dev        # :5173, proxies /api and /ws to the gateway on :8080
+npm run build      # tsc --noEmit && vite build
+npm test           # vitest
 ```
-
-Open http://localhost:5173, create a game, and share the game id with a friend for
-online play — or play Stockfish locally.
 
 ## How it fits together
 
 ```
-Browser (React)                    Spring Boot
-  ├─ REST  /api/games/**    ──────▶  GameController ─┐
-  ├─ WS    /ws (STOMP)      ──────▶  GameSocket      ├─▶ GameService ─▶ chesslib (rules)
-  └─ Stockfish WASM (local AI)                       └─▶ GameRepository ─▶ H2 / Postgres
+browser ──▶ api-gateway ──▶ game-service ──▶ Postgres (rules, moves, clocks)
+ (SPA :3000)   │  session (Redis)        ▲
+               │  mints internal JWT     │  chess.events (RabbitMQ topic exchange)
+               ▼                         │
+     auth · matchmaking · presence · engine · notification · analysis
 ```
 
-The **server owns the truth**: it re-derives legal moves from FEN on every request, so a
-buggy or malicious client cannot make an illegal move.
-
-See `docs/api-contract.md` for the exact REST and WebSocket payloads, and `AGENTS.md` for
-the conventions this repo follows.
+The gateway owns the browser session and exchanges it for a short-lived JWT that downstream
+services validate — so no token is ever exposed to JavaScript and services stay stateless. A move
+is a strongly consistent, single-writer operation in `game-service`; matchmaking, presence,
+notifications and analysis are eventually consistent over the event bus. The full picture is in
+`docs/events.md` and `docs/api-contract.md`.
 
 ## Built with Command Code
 
-This repo follows the workflow in `AGENTS.md`; the `.commandcode/` directory holds the
-`chess-domain` skill and the `test-writer` / `reviewer` sub-agents used while developing it.
+`.commandcode/` holds the skills and sub-agents used while building this; `AGENTS.md` is the
+conventions every contributor — human or agent — follows. `docs/PROGRESS.md` records where the
+build stands.

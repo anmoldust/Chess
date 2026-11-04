@@ -32,7 +32,8 @@ Plan of record: `~/.commandcode/plans/microservices-split.md`
 | 5 — notification + analysis | **Done, verified** | 12 tests green; a finished game produced a GAME_ENDED notification for both players and an analysis report (`moves=4`, `engineBacked=false`) |
 | 6 — full compose + E2E | **Done, verified** | Nine images build from one Dockerfile; all twelve containers healthy; `scripts/e2e.ps1` passes 10/10 through the gateway |
 
-The pre-split monolith in `backend/` is untouched and still works; it is retired at stage 2.
+The pre-split monolith has been removed (the "drop the old monolith" commit). There is no
+`backend/` source tree any more — anything of that name is a stale, git-ignored build directory.
 
 ---
 
@@ -252,16 +253,21 @@ The stack is **currently running** (twelve containers). Stop it with
 `docker compose -f infra/docker-compose.yml down`; the SPA is on http://localhost:3000 and the
 gateway on http://localhost:8080.
 
-1. **Supply a UCI engine** (section 6) so AI games are actually strong.
-2. **Wire the frontend to the four new services** — matchmaking, presence, notifications and
-   analysis are API-complete and reachable through the gateway, but no UI calls them yet. This is
-   the largest remaining gap between "nine working services" and "an app someone would use".
-3. Add real engine-backed analysis. **Done:** `analysis-service` evaluates each move with Stockfish
-   over UCI and reports centipawn loss; a depth knob (`ccmmd.engine.depth`) trades sharpness for
-   latency, and the material heuristic remains only as the no-engine fallback.
-4. **Put this repo under git.** Still the cheapest way to lose all of it.
+1. **UCI engine — done.** The `engine-service` and `analysis-service` images bake in **Stockfish 19**
+   (see `infra/engine.Dockerfile`), so AI games and analysis run on a real engine out of the box;
+   `CCMMD_ENGINE_BINARY` still points either service at a different binary.
+2. **Frontend wired — done.** The SPA calls matchmaking, presence, notifications, analysis and
+   ratings, and has premove, a profile page and a time-control picker. It now carries
+   rendered-component tests (`npm test`).
+3. **Engine-backed analysis — done.** `analysis-service` reports centipawn loss per move over UCI;
+   the material heuristic remains only as the no-engine fallback.
+4. **Under git — done.** The tree is committed. There is still **no remote**, so it lives only on
+   this machine; `gh repo create ccmmd --private --source . --push` is the one step left.
 
-`infra/tools/` holds five dev aids: `stub-downstream.ps1` (records inbound headers),
-`verify-gateway.ps1` (session/CSRF/token-exchange check), `probe-csrf.ps1` (isolates whether a
-CSRF finding is real), `verify-game-flow.ps1` (cross-service game flow) and
-`verify-engine-flow.ps1` (AI move over the bus). Delete any you'd rather not keep.
+Reset emails are delivered through `ResetNotifier`: Mailpit under compose, or any SMTP relay via
+`SPRING_MAIL_HOST` (see decision 8).
+
+`infra/tools/` holds the dev aids used while building this: `stub-downstream.ps1` (records inbound
+headers), `verify-gateway.ps1` (session/CSRF/token-exchange check), `probe-csrf.ps1` (isolates
+whether a CSRF finding is real), `verify-game-flow.ps1`, `verify-engine-flow.ps1`,
+`verify-matchmaking.ps1` and `verify-analysis-flow.ps1`. Delete any you'd rather not keep.
