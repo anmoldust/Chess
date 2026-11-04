@@ -11,7 +11,11 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
+    environment: 'jsdom',
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['src/test/setup.ts'],
+    // A NODE_ENV=production in the ambient shell resolves React to its production build, and
+    // React Testing Library's act() throws there. Pin it so `npm test` behaves the same anywhere.
+    env: { NODE_ENV: 'test' },
   },
 });
