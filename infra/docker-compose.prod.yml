@@ -14,8 +14,8 @@
 #   - per-service memory limits and JSON log rotation so nine JVMs fit in 8 GB
 #   - credentials and the JWT key come from env / mounted secrets, never the image
 #
-# TLS material is mounted from deploy/secrets/ (Cloudflare Origin Certificate). Create it with:
-#   deploy/secrets/origin.pem, deploy/secrets/origin.key   (both chmod 600)
+# TLS is terminated by the hosting provider's proxy, which reaches edge-nginx over plain HTTP on
+# port 80. Nothing TLS-related is mounted; see deploy/nginx/edge.conf for the origin-TLS variant.
 name: ccmmd-prod
 
 x-service-defaults: &service-defaults
@@ -291,10 +291,6 @@ services:
     image: ghcr.io/${GHCR_OWNER}/ccmmd-edge:${TAG}
     ports:
       - "80:80"
-      - "443:443"
-    volumes:
-      - ../deploy/secrets/origin.pem:/etc/nginx/certs/origin.pem:ro
-      - ../deploy/secrets/origin.key:/etc/nginx/certs/origin.key:ro
     mem_limit: 128m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
