@@ -26,7 +26,10 @@ FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=build /workspace/app.jar /app/app.jar
-RUN chown -R app:app /app
+# /var/lib/ccmmd is where auth-service writes its RSA signing key. It must exist in the image and
+# be owned by app: a named volume inherits the ownership of the path it covers on first use, so
+# without this the volume is created root-owned and the service cannot start.
+RUN chown -R app:app /app && mkdir -p /var/lib/ccmmd && chown app:app /var/lib/ccmmd
 USER app
 
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=70", "-jar", "/app/app.jar"]

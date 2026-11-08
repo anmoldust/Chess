@@ -107,6 +107,9 @@ services:
       CCMMD_RESET_MAIL_FROM: ${CCMMD_RESET_MAIL_FROM}
       CCMMD_RESET_BASE_URL: ${CCMMD_RESET_BASE_URL}
       CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN}
+      # No SMTP is configured yet; the mail indicator would otherwise probe localhost:25 and
+      # report DOWN, which fails the container health check and blocks the gateway.
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
       # The RSA signing key survives restarts on a named volume; losing it invalidates all sessions.
       CCMMD_JWT_KEY_PATH: /var/lib/ccmmd/auth-rsa.pem
     volumes:
