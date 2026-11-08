@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,8 +24,13 @@ class UciEvaluationEngineTest {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     private static List<String> stubCommand() throws URISyntaxException {
-        Path script = Paths.get(UciEvaluationEngineTest.class.getResource("/stub-uci-evaluator.ps1").toURI());
-        return List.of("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script.toString());
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        if (windows) {
+            Path script = Paths.get(UciEvaluationEngineTest.class.getResource("/stub-uci-evaluator.ps1").toURI());
+            return List.of("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script.toString());
+        }
+        Path script = Paths.get(UciEvaluationEngineTest.class.getResource("/stub-uci-evaluator.sh").toURI());
+        return List.of("sh", script.toString());
     }
 
     @Test
