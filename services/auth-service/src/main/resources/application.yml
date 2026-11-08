@@ -33,8 +33,9 @@ ccmmd:
     jwt:
       issuer: ccmmd-auth
       ttl: PT15M
-      # A mounted secret in production; generated and persisted on first boot locally.
-      key-path: ${user.home}/.ccmmd/auth-rsa.pem
+      # Generated and persisted on first boot locally; in production this points at a mounted
+      # volume (CCMMD_JWT_KEY_PATH=/var/lib/ccmmd/auth-rsa.pem) so the key survives restarts.
+      key-path: ${CCMMD_JWT_KEY_PATH:${user.home}/.ccmmd/auth-rsa.pem}
     # Shared with the gateway. Replace with mTLS or service identities in production.
     internal-token: ${CCMMD_INTERNAL_TOKEN:dev-internal-token-change-me}
     login:

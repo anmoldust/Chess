@@ -1,0 +1,12 @@
+[Unit]
+Description=CCMMD nightly database backup
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ccmmd
+ExecStart=/usr/bin/env bash /opt/ccmmd/deploy/scripts/backup-db.sh
+User=deploy
+Group=docker

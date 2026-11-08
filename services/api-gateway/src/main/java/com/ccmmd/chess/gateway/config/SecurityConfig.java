@@ -1,10 +1,12 @@
 package com.ccmmd.chess.gateway.config;
 
 import com.ccmmd.chess.gateway.web.ReactiveProblems;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -22,6 +24,12 @@ import reactor.core.publisher.Mono;
  * <p>The browser holds an httpOnly {@code SESSION} cookie and a readable {@code XSRF-TOKEN}
  * cookie; no token is ever exposed to JavaScript. Downstream services get a short-lived JWT
  * instead (see {@code DownstreamAuthFilter}), so they stay stateless.
+ *
+ * <p>Both cookies are marked {@code Secure} in production. The {@code SESSION} cookie's attributes
+ * come from {@code server.reactive.session.cookie.*} (Boot maps them onto the reactive
+ * {@code CookieWebSessionIdResolver}); the CSRF cookie is configured here, driven by the same
+ * {@code ccmmd.security.cookie.secure} / {@code .same-site} properties, so plain-HTTP local
+ * development keeps working.
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -31,10 +39,12 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(
             ServerHttpSecurity http,
             ReactiveProblems problems,
-            ServerSecurityContextRepository securityContextRepository) {
+            ServerSecurityContextRepository securityContextRepository,
+            @Value("${ccmmd.security.cookie.secure:false}") boolean secureCookie,
+            @Value("${ccmmd.security.cookie.same-site:Lax}") String sameSite) {
         http
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(csrfTokenRepository(secureCookie, sameSite))
                         .csrfTokenRequestHandler(new ServerCsrfTokenRequestAttributeHandler()))
                 .securityContextRepository(securityContextRepository)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
@@ -70,6 +80,20 @@ public class SecurityConfig {
                                 exchange.getResponse(), HttpStatus.FORBIDDEN, "Forbidden",
                                 "You are not allowed to do that")));
         return http.build();
+    }
+
+    /**
+     * The CSRF cookie must stay readable by JavaScript (the SPA echoes it in {@code X-XSRF-TOKEN}),
+     * so it cannot be httpOnly — but it is still {@code Secure} in production and {@code SameSite}
+     * scoped, exactly like the session cookie.
+     */
+    private CookieServerCsrfTokenRepository csrfTokenRepository(boolean secureCookie, String sameSite) {
+        CookieServerCsrfTokenRepository repository = CookieServerCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieCustomizer((ResponseCookie.ResponseCookieBuilder cookie) -> cookie
+                .secure(secureCookie)
+                .sameSite(sameSite)
+                .path("/"));
+        return repository;
     }
 
     @Bean

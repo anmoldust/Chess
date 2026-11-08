@@ -1,5 +1,18 @@
 server:
   port: 8080
+  # Trust X-Forwarded-Proto/For from the edge (nginx/Cloudflare) so Secure cookies are issued and
+  # redirects use https. Without this the session cookie is never marked Secure in production.
+  forward-headers-strategy: framework
+  reactive:
+    session:
+      cookie:
+        name: SESSION
+        http-only: true
+        path: /
+        # Secure in production (TLS terminates at Cloudflare); false keeps plain-HTTP local
+        # development working. Boot maps these onto the reactive CookieWebSessionIdResolver.
+        secure: ${CCMMD_COOKIE_SECURE:false}
+        same-site: ${CCMMD_COOKIE_SAME_SITE:Lax}
 
 spring:
   application:
@@ -71,3 +84,10 @@ ccmmd:
     analysis-service: ${CCMMD_ANALYSIS_SERVICE_URL:http://localhost:8087}
   # Shared with auth-service; the credential that authorises the gateway to mint tokens.
   internal-token: ${CCMMD_INTERNAL_TOKEN:dev-internal-token-change-me}
+  security:
+    cookie:
+      # Secure must be true in production (TLS terminates at Cloudflare); false keeps plain-HTTP
+      # local development working. SameSite is Lax: same-origin SPA, and the WebSocket handshake
+      # carries the session cookie.
+      secure: ${CCMMD_COOKIE_SECURE:false}
+      same-site: ${CCMMD_COOKIE_SAME_SITE:Lax}

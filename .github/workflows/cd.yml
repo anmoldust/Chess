@@ -1,0 +1,110 @@
+name: cd
+
+# Runs only after the `ci` workflow succeeds on main/master (or when triggered by hand), so an
+# image that failed tests is never deployed. CI already builds and tests; this workflow only
+# packages images and ships them.
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  guard:
+    # Gate the whole pipeline on CI success for the workflow_run trigger.
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - run: echo "proceeding"
+
+  images:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: api-gateway,         dockerfile: infra/service.Dockerfile, module: services/api-gateway }
+          - { name: auth-service,        dockerfile: infra/service.Dockerfile, module: services/auth-service }
+          - { name: game-service,        dockerfile: infra/service.Dockerfile, module: services/game-service }
+          - { name: matchmaking-service, dockerfile: infra/service.Dockerfile, module: services/matchmaking-service }
+          - { name: presence-service,    dockerfile: infra/service.Dockerfile, module: services/presence-service }
+          - { name: notification-service, dockerfile: infra/service.Dockerfile, module: services/notification-service }
+          # These two bake in Stockfish and need a glibc base image.
+          - { name: engine-service,      dockerfile: infra/engine.Dockerfile,  module: services/engine-service }
+          - { name: analysis-service,    dockerfile: infra/engine.Dockerfile,  module: services/analysis-service }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase the owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: MODULE=${{ matrix.module }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/ccmmd-${{ matrix.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/ccmmd-${{ matrix.name }}:latest
+
+  edge:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase the owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/edge.Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/ccmmd-edge:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/ccmmd-edge:latest
+
+  deploy:
+    needs: [images, edge]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy over SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "cd /opt/ccmmd && git pull --ff-only && TAG='${{ github.sha }}' bash deploy/scripts/deploy.sh"

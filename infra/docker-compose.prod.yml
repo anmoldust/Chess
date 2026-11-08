@@ -1,0 +1,321 @@
+# Production stack for a single VPS, fronted by Cloudflare.
+#
+#   cp deploy/.env.production.example deploy/.env.production   # then fill in, chmod 600
+#   TAG=<git-sha> docker compose --env-file deploy/.env.production -f infra/docker-compose.prod.yml up -d
+#
+# NOTE: `--env-file` is required. It supplies the values for ${...} interpolation (TAG, GHCR_OWNER,
+# passwords...). A service-level `env_file:` would NOT do that, and would also hand every secret to
+# every container — instead each service lists exactly the variables it needs below.
+#
+# Differences from infra/docker-compose.yml (the local stack):
+#   - images come from GHCR (no `build:` except the edge); CI builds them, the VPS only pulls
+#   - an `edge-nginx` replaces the dev `frontend` container: origin TLS + LB + SPA
+#   - no mailpit (real SMTP via SPRING_MAIL_*), no published service ports
+#   - per-service memory limits and JSON log rotation so nine JVMs fit in 8 GB
+#   - credentials and the JWT key come from env / mounted secrets, never the image
+#
+# TLS material is mounted from deploy/secrets/ (Cloudflare Origin Certificate). Create it with:
+#   deploy/secrets/origin.pem, deploy/secrets/origin.key   (both chmod 600)
+name: ccmmd-prod
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+  networks: [chess]
+
+# Java services run as a non-root user and need no Linux capabilities. The data stores are left
+# alone: their entrypoints use su/gosu during first-boot initialisation, which no-new-privileges
+# can interfere with.
+x-java: &java
+  <<: *service-defaults
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD}
+      MATCHMAKING_DB_PASSWORD: ${MATCHMAKING_DB_PASSWORD}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD}
+    volumes:
+      - ../deploy/postgres/10-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - pgdata:/var/lib/postgresql/data
+    # Postgres uses shared memory for parallel queries; the 64 MB default is too small.
+    shm_size: 256m
+    mem_limit: 1200m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    <<: *service-defaults
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    hostname: ccmmd-rabbit
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
+    volumes:
+      - rabbit:/var/lib/rabbitmq
+    mem_limit: 750m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    <<: *service-defaults
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "no"]
+    volumes:
+      - redis:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    <<: *service-defaults
+
+  auth-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-auth-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_db
+      SPRING_DATASOURCE_USERNAME: auth_svc
+      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
+      CCMMD_RESET_MAIL_FROM: ${CCMMD_RESET_MAIL_FROM}
+      CCMMD_RESET_BASE_URL: ${CCMMD_RESET_BASE_URL}
+      CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN}
+      # The RSA signing key survives restarts on a named volume; losing it invalidates all sessions.
+      CCMMD_JWT_KEY_PATH: /var/lib/ccmmd/auth-rsa.pem
+    volumes:
+      - jwtkey:/var/lib/ccmmd
+    mem_limit: 500m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  game-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-game-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/game_db
+      SPRING_DATASOURCE_USERNAME: game_svc
+      SPRING_DATASOURCE_PASSWORD: ${GAME_DB_PASSWORD}
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  engine-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-engine-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  matchmaking-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-matchmaking-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/matchmaking_db
+      SPRING_DATASOURCE_USERNAME: matchmaking_svc
+      SPRING_DATASOURCE_PASSWORD: ${MATCHMAKING_DB_PASSWORD}
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    mem_limit: 400m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  presence-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-presence-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    mem_limit: 350m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  notification-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-notification-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: notification_svc
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+    mem_limit: 350m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  analysis-service:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-analysis-service:${TAG}
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/analysis_db
+      SPRING_DATASOURCE_USERNAME: analysis_svc
+      SPRING_DATASOURCE_PASSWORD: ${ANALYSIS_DB_PASSWORD}
+      CCMMD_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
+      CCMMD_GAME_SERVICE_URL: http://game-service:8082
+    mem_limit: 640m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8087/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      game-service: { condition: service_healthy }
+
+  api-gateway:
+    <<: *java
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-api-gateway:${TAG}
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CCMMD_COOKIE_SECURE: ${CCMMD_COOKIE_SECURE}
+      CCMMD_COOKIE_SAME_SITE: ${CCMMD_COOKIE_SAME_SITE}
+      CCMMD_AUTH_SERVICE_URL: http://auth-service:8081
+      CCMMD_GAME_SERVICE_URL: http://game-service:8082
+      CCMMD_MATCHMAKING_SERVICE_URL: http://matchmaking-service:8084
+      CCMMD_PRESENCE_SERVICE_URL: http://presence-service:8085
+      CCMMD_NOTIFICATION_SERVICE_URL: http://notification-service:8086
+      CCMMD_ANALYSIS_SERVICE_URL: http://analysis-service:8087
+      CCMMD_INTERNAL_TOKEN: ${CCMMD_INTERNAL_TOKEN}
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    depends_on:
+      redis: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+
+  edge-nginx:
+    build:
+      context: ..
+      dockerfile: deploy/edge.Dockerfile
+    image: ghcr.io/${GHCR_OWNER}/ccmmd-edge:${TAG}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../deploy/secrets/origin.pem:/etc/nginx/certs/origin.pem:ro
+      - ../deploy/secrets/origin.key:/etc/nginx/certs/origin.key:ro
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      api-gateway: { condition: service_healthy }
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    security_opt: ["no-new-privileges:true"]
+    networks: [chess]
+
+networks:
+  chess:
+    driver: bridge
+
+volumes:
+  pgdata:
+  rabbit:
+  redis:
+  jwtkey:
