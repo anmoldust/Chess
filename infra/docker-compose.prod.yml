@@ -296,7 +296,9 @@ services:
       - "80:80"
     mem_limit: 128m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      # 127.0.0.1, not localhost: nginx listens on IPv4 only, and localhost resolves to ::1 inside
+      # this image, so the check reported "connection refused" while the site served fine.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 15s
       timeout: 5s
       retries: 5
