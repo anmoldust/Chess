@@ -10,6 +10,8 @@ frontend/dist/
 frontend/.vite/
 frontend/public/stockfish/
 npm-debug.log*
+# Vite writes a transpiled config snapshot here on some Windows setups; it embeds absolute paths.
+frontend/vite.config.ts.timestamp-*
 
 # Env / secrets
 .env
