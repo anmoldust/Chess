@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.reactive.server.FluxExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
@@ -72,6 +73,21 @@ class GatewaySecurityTest {
                 .as("document.cookie must be able to read the CSRF token")
                 .isFalse();
         assertThat(csrf.getSameSite()).isEqualTo("Lax");
+    }
+
+    @Test
+    @DisplayName("the CSRF token is also returned in a response header, so the SPA never needs the cookie")
+    void csrfTokenIsExposedInResponseHeader() {
+        FluxExchangeResult<String> result = client.get().uri("/api/auth/me").exchange()
+                .expectStatus().isOk()
+                .returnResult(String.class);
+
+        String header = result.getResponseHeaders().getFirst("X-CSRF-TOKEN");
+        ResponseCookie cookie = result.getResponseCookies().getFirst("XSRF-TOKEN");
+
+        assertThat(header).as("response header must carry the CSRF token").isNotNull();
+        assertThat(cookie).as("cookie is still issued for compatibility").isNotNull();
+        assertThat(header).isEqualTo(cookie.getValue());
     }
 
     @Test

@@ -35,6 +35,9 @@ import reactor.core.publisher.Mono;
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
+    /** Response header carrying the current CSRF token so the SPA does not need document.cookie. */
+    private static final String CSRF_HEADER = "X-CSRF-TOKEN";
+
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(
             ServerHttpSecurity http,
@@ -108,6 +111,11 @@ public class SecurityConfig {
     /**
      * Spring Security writes the CSRF cookie lazily, only when the token is read. Without this the
      * very first mutation from a fresh browser would be rejected for a token it was never given.
+     *
+     * <p>It also mirrors the token into a response header. Reading it from {@code document.cookie}
+     * is fragile — an httpOnly cookie, a stale duplicate, or a path mismatch silently yields no
+     * header and a 403 for every mutation — so the SPA prefers this header and only falls back to
+     * the cookie.
      */
     @Bean
     public WebFilter csrfCookieWebFilter() {
@@ -116,7 +124,10 @@ public class SecurityConfig {
             // makes Spring Security generate the token and write the cookie.
             Mono<CsrfToken> csrfToken =
                     exchange.getAttributeOrDefault(CsrfToken.class.getName(), Mono.<CsrfToken>empty());
-            return csrfToken.then(chain.filter(exchange));
+            return csrfToken
+                    .doOnNext(token -> exchange.getResponse()
+                            .getHeaders().set(CSRF_HEADER, token.getToken()))
+                    .then(chain.filter(exchange));
         };
     }
 }

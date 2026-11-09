@@ -1,14 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from './client';
 
-function response(body: string, status = 200, statusText = ''): Response {
-  return {
+function response(
+  body: string,
+  status = 200,
+  statusText = '',
+  headers: Record<string, string> = {},
+): Response {
+  const res = {
     ok: status >= 200 && status < 300,
     status,
     statusText,
+    headers: new Headers(headers),
     text: async () => body,
     json: async () => JSON.parse(body),
-  } as unknown as Response;
+    clone: () => res,
+  };
+  return res as unknown as Response;
 }
 
 function stubFetch(res: Response) {
@@ -60,5 +68,29 @@ describe('api client', () => {
     stubFetch(response('', 204));
 
     await expect(api.auth.logout()).resolves.toBeUndefined();
+  });
+
+  it('uses the token from the response header when no cookie is readable', async () => {
+    // The gateway mirrors the token into a header; document.cookie can be unusable (httpOnly,
+    // duplicate, stale path). The client must prime itself from a GET and reuse that token.
+    // A fresh module instance is required because the token is memoised per module.
+    vi.resetModules();
+    const { api: freshApi } = await import('./client');
+
+    const spy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response('{"authenticated":false,"user":null}', 200, '', { 'X-CSRF-TOKEN': 'hdr-123' }),
+      )
+      .mockResolvedValueOnce(response('', 204));
+    vi.stubGlobal('fetch', spy);
+    document.cookie = 'XSRF-TOKEN=; max-age=0; path=/';
+
+    await freshApi.auth.logout();
+
+    const [primingUrl] = spy.mock.calls[0] as [string];
+    const [, init] = spy.mock.calls[1] as [string, RequestInit];
+    expect(primingUrl).toBe('/api/auth/me');
+    expect((init.headers as Record<string, string>)['X-XSRF-TOKEN']).toBe('hdr-123');
   });
 });

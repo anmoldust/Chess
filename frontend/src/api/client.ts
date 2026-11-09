@@ -36,22 +36,60 @@ interface ProblemDetail {
   detail?: string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const CSRF_HEADER = 'X-CSRF-TOKEN';
+
+/**
+ * The gateway mirrors the CSRF token into a response header on every call. That is the primary
+ * source: `document.cookie` can hide the token (httpOnly, duplicate, or a stale path), which
+ * silently produces no X-XSRF-TOKEN header and a 403 on every mutation.
+ */
+let csrfToken: string | null = null;
+
+function rememberCsrf(response: Response): void {
+  const fromHeader = response.headers.get(CSRF_HEADER);
+  if (fromHeader) {
+    csrfToken = fromHeader;
+  }
+}
+
+/** Header first, cookie second, and one priming GET if the token is still unknown. */
+async function currentCsrfToken(): Promise<string | null> {
+  if (csrfToken) return csrfToken;
+  csrfToken = csrfTokenFrom(document.cookie);
+  if (csrfToken) return csrfToken;
+
+  const priming = await fetch(`${BASE}/auth/me`, { credentials: 'same-origin' });
+  rememberCsrf(priming);
+  return csrfToken ?? csrfTokenFrom(document.cookie);
+}
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
+  const mutating = method !== 'GET' && method !== 'HEAD';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((init?.headers as Record<string, string> | undefined) ?? {}),
   };
 
-  // The session cookie authenticates us; the CSRF cookie must be echoed on mutations.
-  if (method !== 'GET' && method !== 'HEAD') {
-    const token = csrfTokenFrom(document.cookie);
+  // The session cookie authenticates us; the CSRF token must be echoed on mutations.
+  if (mutating) {
+    const token = await currentCsrfToken();
     if (token) {
       headers['X-XSRF-TOKEN'] = token;
     }
   }
 
   const response = await fetch(`${BASE}${path}`, { credentials: 'same-origin', ...init, headers });
+  rememberCsrf(response);
+
+  // A token can go stale (server restart, cookie cleared mid-session). Drop it and retry once.
+  if (response.status === 403 && mutating && !retried) {
+    const text = await response.clone().text();
+    if (text.includes('CSRF')) {
+      csrfToken = null;
+      return request<T>(path, init, true);
+    }
+  }
 
   if (!response.ok) {
     const problem = (await response.json().catch(() => ({}))) as ProblemDetail;
