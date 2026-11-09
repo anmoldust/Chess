@@ -17,6 +17,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +54,24 @@ class GatewaySecurityTest {
         String token = cookie(response, "XSRF-TOKEN");
         org.assertj.core.api.Assertions.assertThat(token).as("CSRF cookie must be issued").isNotNull();
         return token;
+    }
+
+    @Test
+    @DisplayName("the CSRF cookie is readable by JavaScript, otherwise every mutation 403s")
+    void csrfCookieIsReadableByJavascript() {
+        ResponseCookie csrf = client.get().uri("/api/auth/me").exchange()
+                .expectStatus().isOk()
+                .returnResult(String.class)
+                .getResponseCookies()
+                .getFirst("XSRF-TOKEN");
+
+        // The SPA echoes this cookie from document.cookie in X-XSRF-TOKEN. An httpOnly cookie is
+        // invisible to JavaScript, so the header is never sent and the gateway rejects the POST.
+        assertThat(csrf).as("CSRF cookie must be issued").isNotNull();
+        assertThat(csrf.isHttpOnly())
+                .as("document.cookie must be able to read the CSRF token")
+                .isFalse();
+        assertThat(csrf.getSameSite()).isEqualTo("Lax");
     }
 
     @Test

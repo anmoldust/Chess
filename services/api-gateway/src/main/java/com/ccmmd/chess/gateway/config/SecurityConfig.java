@@ -89,7 +89,11 @@ public class SecurityConfig {
      */
     private CookieServerCsrfTokenRepository csrfTokenRepository(boolean secureCookie, String sameSite) {
         CookieServerCsrfTokenRepository repository = CookieServerCsrfTokenRepository.withHttpOnlyFalse();
+        // withHttpOnlyFalse() is implemented as a cookie customizer, so setting our own customizer
+        // below replaces it and the httpOnly flag silently reverts to true. Repeat it here: the SPA
+        // reads the token from document.cookie, and an httpOnly cookie makes every mutation 403.
         repository.setCookieCustomizer((ResponseCookie.ResponseCookieBuilder cookie) -> cookie
+                .httpOnly(false)
                 .secure(secureCookie)
                 .sameSite(sameSite)
                 .path("/"));
