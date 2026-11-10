@@ -147,7 +147,12 @@ export const api = {
     },
   },
 
-  createGame(body: { mode: GameMode; preferredColor: PlayerColor; timeControl: string }): Promise<GameDto> {
+  createGame(body: {
+    mode: GameMode;
+    preferredColor: PlayerColor;
+    timeControl: string;
+    difficulty?: string;
+  }): Promise<GameDto> {
     return request<GameDto>('/games', { method: 'POST', body: JSON.stringify(body) });
   },
 

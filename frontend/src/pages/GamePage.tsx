@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { ChessBoard } from '../components/ChessBoard';
 import { MoveList } from '../components/MoveList';
-import { chooseAiMove, type Difficulty } from '../engine';
 import { errorMessage } from '../lib/errors';
 import { resolvePremove } from '../lib/premove';
 import { navigate } from '../lib/useHashRoute';
@@ -40,14 +39,10 @@ export function GamePage({ gameId }: { gameId: string }) {
   const setGame = useGameStore((s) => s.setGame);
   const connected = useGameStore((s) => s.connected);
   const setConnected = useGameStore((s) => s.setConnected);
-  const aiThinking = useGameStore((s) => s.aiThinking);
-  const setAiThinking = useGameStore((s) => s.setAiThinking);
   const error = useGameStore((s) => s.error);
   const setError = useGameStore((s) => s.setError);
 
   const socketRef = useRef<GameSocket | null>(null);
-  const aiFenRef = useRef<string | null>(null);
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [copied, setCopied] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
   const [whiteRating, setWhiteRating] = useState<RatingDto | null>(null);
@@ -115,12 +110,16 @@ export function GamePage({ gameId }: { gameId: string }) {
 
   const isAi = game?.mode === 'HUMAN_VS_AI';
   const started = game?.status === 'IN_PROGRESS';
+  // The server plays the computer's moves (engine-service), so "thinking" is simply the interval
+  // until it broadcasts the reply. Nothing here waits on a client-side engine any more.
+  const aiThinking = Boolean(
+    isAi && started && myColor !== null && game?.turn !== myColor,
+  );
   const canMove =
-    Boolean(game) && started && myColor !== null && (!isAi || game?.turn === myColor) && !aiThinking;
+    Boolean(game) && started && myColor !== null && (!isAi || game?.turn === myColor);
 
   // A premove is made on the opponent's turn: it is queued now and attempted when it is our turn.
-  const canPremove =
-    Boolean(game) && started && myColor !== null && game?.turn !== myColor && !aiThinking;
+  const canPremove = Boolean(game) && started && myColor !== null && game?.turn !== myColor;
 
   const submitMove = useCallback(
     (move: MoveRequest) => {
@@ -147,39 +146,6 @@ export function GamePage({ gameId }: { gameId: string }) {
   const handlePremove = useCallback((from: string, to: string) => {
     setPremove({ from, to });
   }, []);
-
-  // Drive the engine when it is the computer's turn.
-  useEffect(() => {
-    if (!game || !isAi || game.status !== 'IN_PROGRESS' || myColor === null || game.turn === myColor) {
-      return;
-    }
-    if (aiFenRef.current === game.fen) {
-      return;
-    }
-    aiFenRef.current = game.fen;
-
-    let cancelled = false;
-    setAiThinking(true);
-    chooseAiMove(game.fen, difficulty)
-      .then((uci) => {
-        if (cancelled || !uci) return;
-        submitMove({
-          from: uci.slice(0, 2),
-          to: uci.slice(2, 4),
-          promotion: uci.length > 4 ? uci[4] : null,
-        });
-      })
-      .catch((e) => {
-        if (!cancelled) setError(errorMessage(e));
-      })
-      .finally(() => {
-        if (!cancelled) setAiThinking(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [game, isAi, myColor, difficulty, submitMove, setAiThinking, setError]);
 
   const analysisGameId = game?.id;
   const gameOver = game
@@ -475,16 +441,6 @@ export function GamePage({ gameId }: { gameId: string }) {
               {copied ? 'Copied!' : 'Copy link'}
             </button>
           </div>
-          {isAi && myColor !== null && (
-            <label className="field">
-              Difficulty
-              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as Difficulty)}>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </label>
-          )}
         </div>
 
         <div className="panel">

@@ -26,6 +26,7 @@ export function LobbyPage() {
 
   const [mode, setMode] = useState<GameMode>('HUMAN_VS_HUMAN');
   const [color, setColor] = useState<PlayerColor>('WHITE');
+  const [difficulty, setDifficulty] = useState('MEDIUM');
   const [openGames, setOpenGames] = useState<GameDto[]>([]);
   const [joinId, setJoinId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -78,6 +79,7 @@ export function LobbyPage() {
         mode,
         preferredColor: color,
         timeControl: createTimeControl,
+        difficulty,
       });
       setGame(game);
       navigate({ name: 'game', id: game.id });
@@ -225,6 +227,16 @@ export function LobbyPage() {
             <option value="RANDOM">Random</option>
           </select>
         </label>
+        {mode === 'HUMAN_VS_AI' && (
+          <label className="field">
+            Difficulty
+            <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+              <option value="EASY">Easy</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HARD">Hard</option>
+            </select>
+          </label>
+        )}
         <label className="field">
           Time control
           <select value={createTimeControl} onChange={(e) => setCreateTimeControl(e.target.value)}>
