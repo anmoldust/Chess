@@ -1,0 +1,27 @@
+# Ships every container's stdout/stderr to Logstash.
+#
+# docker's json-file driver already stamps each line with the container name, so no per-service
+# configuration is needed: a new service starts being collected the moment it boots.
+filebeat.inputs:
+  - type: container
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    # Container metadata (name, image, labels) is what makes the logs searchable per service.
+    processors:
+      - add_host_metadata: ~
+
+processors:
+  # Never ship the log stack's own output back into itself.
+  - drop_event.when.or:
+      - contains: { container.name: "filebeat" }
+      - contains: { container.name: "logstash" }
+      - contains: { container.name: "elasticsearch" }
+      - contains: { container.name: "kibana" }
+      - contains: { container.name: "prometheus" }
+      - contains: { container.name: "grafana" }
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: warning
+logging.to_files: false

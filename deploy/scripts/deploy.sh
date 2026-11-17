@@ -10,6 +10,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."          # repo root
 COMPOSE="docker compose --env-file deploy/.env.production -f infra/docker-compose.prod.yml"
+# Observability lives in its own compose project: it shares the app network but has its own
+# lifecycle, so a broken dashboard never blocks or rolls back an application deploy.
+COMPOSE_MON="docker compose -p ccmmd-mon --env-file deploy/.env.production -f infra/docker-compose.monitoring.yml"
 ENV_FILE="deploy/.env.production"
 LAST_GOOD="deploy/.last-good-tag"
 
@@ -73,4 +76,12 @@ for _ in $(seq 1 12); do
 done
 
 echo "${TAG}" > "$LAST_GOOD"
+
+# Deliberately after the rollback marker: a monitoring failure is reported, never fatal, and
+# must not roll the application back.
+echo "==> observability stack"
+if ! $COMPOSE_MON up -d --remove-orphans; then
+    echo "    monitoring: failed to start (the application is unaffected)" >&2
+fi
+
 echo "==> deploy of ${TAG} complete"

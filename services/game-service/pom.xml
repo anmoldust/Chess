@@ -87,7 +87,13 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
-    </dependencies>
+            <!-- Exposes /actuator/prometheus for the monitoring stack. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+</dependencies>
 
     <build>
         <plugins>

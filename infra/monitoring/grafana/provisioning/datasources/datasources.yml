@@ -1,0 +1,24 @@
+# Datasources provisioned on first boot: metrics from Prometheus, logs from Elasticsearch.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: Logs (Elasticsearch)
+    uid: es-logs
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: "ccmmd-logs-*"
+    jsonData:
+      timeField: "@timestamp"
+      esVersion: "8.15.0"
+      logMessageField: message
+      logLevelField: level

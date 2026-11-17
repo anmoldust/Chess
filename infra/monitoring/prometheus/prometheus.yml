@@ -1,0 +1,47 @@
+# Prometheus scrape configuration for the CCMMD stack.
+#
+# Targets are resolved over the shared docker network, so the services never have to expose
+# actuator endpoints publicly: the gateway's security chain only permits /actuator/health.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: ccmmd-prod
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: host
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: containers
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: spring
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - 'api-gateway:8080'
+          - 'auth-service:8081'
+          - 'game-service:8082'
+          - 'engine-service:8083'
+          - 'matchmaking-service:8084'
+          - 'presence-service:8085'
+          - 'notification-service:8086'
+          - 'analysis-service:8087'
+
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ['rabbitmq:15692']
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']

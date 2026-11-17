@@ -179,7 +179,46 @@ Restore into a scratch DB first (`createdb scratch && psql -d scratch`) if you o
 - **Horizontal scaling of `game-service`**: it holds an in-memory STOMP `SimpleBroker`, so a second
   replica would drop broadcasts. It needs a broker relay first. The gateway and the SPA can be
   scaled behind the `api_gateway` upstream today.
-- **Metrics stack (Prometheus/Grafana)**: skipped to fit 8 GB; health checks + logs + an external
-  uptime probe are the current observability.
+- **Metrics stack (Prometheus/Grafana)**: now shipped — see section 7.
 - **Managed data services**: the plan chose self-hosted; moving Postgres to RDS later is a
   `SPRING_DATASOURCE_URL` change.
+
+---
+
+## 7. Observability
+
+Runs as its own compose project (`ccmmd-mon`), sharing the application network but deployed
+separately so a monitoring failure never blocks or rolls back an application deploy.
+
+| what | where |
+| --- | --- |
+| Grafana (metrics + log search) | `https://<DOMAIN>/grafana/` — admin password is `GRAFANA_ADMIN_PASSWORD` in `deploy/.env.production` |
+| Kibana | not public: `ssh -L 5601:localhost:5601 anmol`, then http://localhost:5601 |
+| Prometheus | internal only, scraped by Grafana |
+| Elasticsearch | internal only, `ccmmd-logs-YYYY.MM.dd` indices |
+| Logstash | internal, Beats input on 5044 |
+| Filebeat | reads `/var/lib/docker/containers/*/*.log`, drops the log stack's own output |
+
+Services expose `/actuator/prometheus` (`micrometer-registry-prometheus` + `management.endpoints.
+web.exposure.include=health,info,prometheus`). Prometheus scrapes them over the docker network, so
+no actuator endpoint is reachable from the internet.
+
+```bash
+M="docker compose -p ccmmd-mon --env-file deploy/.env.production -f infra/docker-compose.monitoring.yml"
+$M ps
+$M logs -f grafana            # or elasticsearch / logstash / filebeat
+$M restart grafana
+$M down                       # monitoring only; the application keeps running
+```
+
+Memory budget on this 10 GB host: Elasticsearch 1.8 GB, Logstash 900 MB, Kibana 700 MB, Prometheus
+700 MB, Grafana 500 MB, cadvisor 400 MB, Filebeat 300 MB, exporters ~320 MB. That is ~5.6 GB of
+*limits* on top of the application stack — the limits are ceilings, but if the box starts swapping,
+cut `LS_JAVA_OPTS`/`ES_JAVA_OPTS` first, then `prometheus --storage.tsdb.retention.time`.
+
+Two known caveats:
+- `cadvisor` needs `privileged: true`. If the LXC refuses it, the container-memory/CPU panels stay
+  empty while everything else works; drop the service rather than fighting the host.
+- Elasticsearch needs `vm.max_map_count >= 262144` (this host reports 1048576). If a future host is
+  lower, Elasticsearch will refuse to start.
+
