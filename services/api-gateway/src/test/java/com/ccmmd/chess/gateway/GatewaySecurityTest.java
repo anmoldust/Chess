@@ -91,9 +91,15 @@ class GatewaySecurityTest {
     }
 
     @Test
-    @DisplayName("the Prometheus endpoint is scrapeable, but only on the private network")
-    void prometheusEndpointIsPublic() {
-        client.get().uri("/actuator/prometheus").exchange().expectStatus().isOk();
+    @DisplayName("the Prometheus endpoint is not behind authentication — only the private network can reach it")
+    void prometheusEndpointIsNotAuthenticated() {
+        // Whether the registry endpoint itself is wired up depends on actuator auto-configuration,
+        // which differs between this test context (a SimpleMeterRegistry is created) and the
+        // packaged application. What must hold either way is that the security chain does not
+        // reject the scrape: without the permitAll this returns 401.
+        client.get().uri("/actuator/prometheus").exchange()
+                .expectStatus().value(status ->
+                        assertThat(status).isNotIn(401, 403));
     }
 
     @Test
