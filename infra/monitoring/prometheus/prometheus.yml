@@ -1,7 +1,8 @@
 # Prometheus scrape configuration for the CCMMD stack.
 #
 # Targets are resolved over the shared docker network, so the services never have to expose
-# actuator endpoints publicly: the gateway's security chain only permits /actuator/health.
+# actuator endpoints publicly: /actuator/prometheus is permitted only on that private network,
+# and the edge never proxies it.
 global:
   scrape_interval: 15s
   evaluation_interval: 30s

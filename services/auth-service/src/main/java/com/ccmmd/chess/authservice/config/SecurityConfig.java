@@ -48,6 +48,8 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/actuator/health/**",
                                 "/actuator/info",
+                                // Scraped by Prometheus on the private docker network only.
+                                "/actuator/prometheus",
                                 "/error")
                         .permitAll()
                         .anyRequest().authenticated())

@@ -91,6 +91,12 @@ class GatewaySecurityTest {
     }
 
     @Test
+    @DisplayName("the Prometheus endpoint is scrapeable, but only on the private network")
+    void prometheusEndpointIsPublic() {
+        client.get().uri("/actuator/prometheus").exchange().expectStatus().isOk();
+    }
+
+    @Test
     @DisplayName("an anonymous caller is reported as unauthenticated, not rejected")
     void anonymousMe() {
         client.get().uri("/api/auth/me").exchange()

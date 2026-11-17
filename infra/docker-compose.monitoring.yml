@@ -52,7 +52,7 @@ services:
       pipeline.batch.delay: "50"
       xpack.monitoring.enabled: "false"
     volumes:
-      - ../monitoring/logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./monitoring/logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
     mem_limit: 900m
     depends_on:
       elasticsearch: { condition: service_healthy }
@@ -78,7 +78,7 @@ services:
     user: root
     command: ["filebeat", "-e", "-strict.perms=false"]
     volumes:
-      - ../monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - filebeatdata:/usr/share/filebeat/data
@@ -94,7 +94,7 @@ services:
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=8GB
     volumes:
-      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
     mem_limit: 700m
 
@@ -154,8 +154,8 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_INSTALL_PLUGINS: ""
     volumes:
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
     mem_limit: 500m
 

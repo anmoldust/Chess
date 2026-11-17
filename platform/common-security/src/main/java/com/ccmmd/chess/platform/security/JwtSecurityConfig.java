@@ -40,7 +40,10 @@ public class JwtSecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
-                    auth.requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll();
+                    // /actuator/prometheus is scraped by Prometheus over the private docker
+                    // network only; it is never proxied by the edge.
+                    auth.requestMatchers("/actuator/health", "/actuator/health/**",
+                            "/actuator/info", "/actuator/prometheus").permitAll();
                     publicPaths.forEach(entry -> permit(auth, entry));
                     auth.anyRequest().authenticated();
                 })
